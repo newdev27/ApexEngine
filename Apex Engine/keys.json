@@ -31,6 +31,14 @@
       "created_at": 1794058750,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-LTGPEB-5CG998-8B": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794058917,
+      "expires_at": null,
+      "note": ""
     }
   }
 }
