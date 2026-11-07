@@ -7,6 +7,6 @@
       "created_at": 0,
       "expires_at": 0,
       "note": "test free key - replace expires_at with real timestamp"
-    },
+    }
   }
 }
