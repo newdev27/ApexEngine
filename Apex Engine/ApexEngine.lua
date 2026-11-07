@@ -280,6 +280,7 @@ function KeySystem:GetSaved()
     return nil
 end
 
+local StartGameLogic -- forward declare
 local ApexEngine = { Flags = {}, Icons = Icons, Theme = Theme, ToggleKey = Enum.KeyCode.Insert }
 ApexEngine.__index = ApexEngine
 
@@ -999,8 +1000,6 @@ function ApexEngine:CreateWindow(cfg)
     if authed then task.spawn(StartGameLogic) end
     return Window
 end
-
-local StartGameLogic  -- forward declare so CreateWindow can reference it
 
 local Window = ApexEngine:CreateWindow({
     Title  = "APEX ENGINE",
