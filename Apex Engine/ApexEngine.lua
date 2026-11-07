@@ -1027,7 +1027,7 @@ lightG:AddCheckbox({ Name="Force Time",     Default=false, Flag="w_forcetime" })
 lightG:AddSlider({   Name="Time of Day",    Min=0,Max=24,Default=14,Suffix="h",Flag="w_time" })
 
 local envG = WorldPage:AddGroup("Environment", Icons.world, "Right", 220)
-envG:AddCheckbox({ Name="No Trees",         Default=false, Flag="w_notrees" })
+envG:AddCheckbox({ Name="No Leaves",        Default=false, Flag="w_notrees" })
 envG:AddCheckbox({ Name="No Grass",         Default=false, Flag="w_nograss" })
 envG:AddSeparator()
 envG:AddCheckbox({ Name="Bloom",            Default=false, Flag="w_bloom" })
@@ -1121,12 +1121,39 @@ cfgLeft:AddButton({ Name="Delete", Callback=function()
     pcall(function() delfile(CFG_FOLDER.."/"..name..".json") end); cfgDrop:Refresh(listConfigs())
 end })
 
-local cfgRight = ConfigPage:AddGroup("Interface", Icons.hammer, "Right", 160)
+local cfgRight = ConfigPage:AddGroup("Interface", Icons.hammer, "Right", 210)
 cfgRight:AddKeybind({ Name="Hide UI Key", Default=Enum.KeyCode.RightShift, Flag="hide_key", Callback=function(key)
     ApexEngine.ToggleKey = key
 end })
 cfgRight:AddCheckbox({ Name="Watermark", Default=true, Flag="m_watermark" })
 cfgRight:AddCheckbox({ Name="Auto Load", Default=false, Flag="cfg_autoload" })
+cfgRight:AddSeparator()
+cfgRight:AddButton({ Name="Unload Script", Callback=function()
+    -- Clean up all runtime connections
+    for _, c in ipairs(_runtimeConnections) do pcall(function() c:Disconnect() end) end
+    table.clear(_runtimeConnections)
+    -- Destroy GUIs
+    pcall(function() Window:Destroy() end)
+    pcall(function()
+        for _, gui in ipairs({ "ApexWatermark", "ApexESP", "ApexFOV", "ApexEngineUI" }) do
+            local g = GetParentGui():FindFirstChild(gui)
+            if g then g:Destroy() end
+        end
+    end)
+    -- Remove blur
+    pcall(function()
+        local b = game:GetService("Lighting"):FindFirstChild("ApexEngineBlur")
+        if b then b:Destroy() end
+    end)
+    -- Restore camera
+    pcall(function()
+        local cam = workspace.CurrentCamera
+        cam.CameraType = Enum.CameraType.Custom
+        cam.FieldOfView = 70
+        game:GetService("UserInputService").MouseBehavior = Enum.MouseBehavior.Default
+    end)
+    getgenv().apexengine_loaded = nil
+end })
 
 -- ============================================================
 -- WATERMARK + FPS
@@ -1272,21 +1299,20 @@ do
                 for _,v in ipairs(sh:GetChildren()) do
                     local tf = v:GetAttribute("TemplateFolder")
                     if tf=="Trees" or tf=="PineTrees" then
-                        hideObj(v)
+                        local leaves = v:FindFirstChild("Leaves")
+                        if leaves then hideObj(leaves) end
                     end
-                    -- also hide Leaves inside any tree container
-                    local leaves = v:FindFirstChild("Leaves")
-                    if leaves then hideObj(leaves) end
                 end
                 if not _noTreesConn then
                     _noTreesConn = sh.ChildAdded:Connect(function(v)
                         if not ApexEngine.Flags["w_notrees"] then return end
                         local tf = v:GetAttribute("TemplateFolder")
                         if tf=="Trees" or tf=="PineTrees" then
-                            task.defer(function() hideObj(v) end)
+                            task.defer(function()
+                                local leaves = v:FindFirstChild("Leaves")
+                                if leaves then hideObj(leaves) end
+                            end)
                         end
-                        local leaves = v:FindFirstChild("Leaves")
-                        if leaves then task.defer(function() hideObj(leaves) end) end
                     end)
                 end
             end
@@ -1415,7 +1441,9 @@ do
         if not _saHooked and GunFire and hookfunction then
             _saHooked = true
             local orig = GunFire.FireServer
-            hookfunction(orig, newcclosure(function(self, muzzlePos, origin, direction, gunName, ...)
+            hookfunction(orig, newcclosure(function(self, ...)
+                local args = {...}
+                -- args: muzzlePos, origin, direction, gunName, serverTime, isADS, sessionId, shotSeq, ...
                 if flags["sa_enabled"] and UserInputService:IsKeyDown(flags["sa_key"] or Enum.KeyCode.Q) then
                     local hitchance = flags["sa_hitchance"] or 100
                     if math.random(1,100) <= hitchance then
@@ -1424,13 +1452,14 @@ do
                         local target   = getClosestEnemy(partName, fov)
                         if target then
                             local part = getAimPart(target.char, partName)
+                            local muzzlePos = args[1]
                             if part and typeof(muzzlePos) == "Vector3" then
-                                direction = (part.Position - muzzlePos).Unit
+                                args[3] = (part.Position - muzzlePos).Unit
                             end
                         end
                     end
                 end
-                return orig(self, muzzlePos, origin, direction, gunName, ...)
+                return orig(self, table.unpack(args))
             end))
         end
     end))
@@ -1566,16 +1595,20 @@ do
         return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
     end
 
-    -- Get 2D bounding box from character
+    local BODY_PARTS = {"Head","UpperTorso","LowerTorso","LeftUpperArm","RightUpperArm","LeftUpperLeg","RightUpperLeg"}
+    -- Get 2D bounding box from character using only core body parts
     local function getCharBounds(char)
         local cam = workspace.CurrentCamera
         local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
         local visible = false
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+        for _, name in ipairs(BODY_PARTS) do
+            local part = char:FindFirstChild(name)
+            if part and part:IsA("BasePart") then
                 local sp, onScreen = cam:WorldToViewportPoint(part.Position)
                 if onScreen and sp.Z > 0 then
                     visible = true
+                    local r = part.Size.Magnitude * 0.5
+                    local edge = cam:WorldToViewportPoint(part.Position + Vector3.new(r,r,0))
                     if sp.X < minX then minX = sp.X end
                     if sp.Y < minY then minY = sp.Y end
                     if sp.X > maxX then maxX = sp.X end
@@ -1651,7 +1684,7 @@ do
         local tracerF = Instance.new("Frame")
         tracerF.BackgroundColor3 = Color3.fromRGB(0,180,255)
         tracerF.BorderSizePixel = 0
-        tracerF.AnchorPoint = Vector2.new(0.5, 0)
+        tracerF.AnchorPoint = Vector2.new(0, 0.5)
         tracerF.Visible = false
         tracerF.Parent = espGui
         d.tracer = tracerF
@@ -1724,18 +1757,17 @@ do
         elseif origin == "Mouse" then
             local mp = UserInputService:GetMouseLocation()
             ox, oy = mp.X, mp.Y
-        else -- Bottom
+        else
             ox, oy = vp.X/2, vp.Y
         end
         local dx, dy = tx - ox, ty - oy
         local len = math.sqrt(dx*dx + dy*dy)
         if len < 1 then d.tracer.Visible = false; return end
-        local angle = math.atan2(dy, dx)
-        d.tracer.Position  = UDim2.fromOffset(ox, oy)
-        d.tracer.Size      = UDim2.fromOffset(len, 1)
-        d.tracer.Rotation  = math.deg(angle)
+        d.tracer.Position         = UDim2.fromOffset(ox, oy)
+        d.tracer.Size             = UDim2.fromOffset(len, 1)
+        d.tracer.Rotation         = math.deg(math.atan2(dy, dx))
         d.tracer.BackgroundColor3 = col
-        d.tracer.Visible   = true
+        d.tracer.Visible          = true
     end
 
     -- Main ESP update loop
