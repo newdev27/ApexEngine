@@ -7,6 +7,14 @@
       "created_at": 0,
       "expires_at": 0,
       "note": "test free key - replace expires_at with real timestamp"
+    },
+    "APEX-MNADHF-24NB27-E8": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "1min",
+      "created_at": 1794058661,
+      "expires_at": 1794058721,
+      "note": ""
     }
   }
 }
