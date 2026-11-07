@@ -141,8 +141,8 @@ end
 local HttpService = game:GetService("HttpService")
 local KEY_FILE    = "ApexEngine/key.dat"
 local HWID_FILE   = "ApexEngine/hwid.dat"
-local KEYS_URL    = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/keys.json"
-local BIND_URL    = "https://api.github.com/repos/newdev27/ApexEngine/contents/keys.json"
+local KEYS_URL    = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json"
+local BIND_URL    = "https://api.github.com/repos/newdev27/ApexEngine/contents/Apex%20Engine/keys.json"
 local SALT        = "AX_br27_$3cr3t_2k25"
 
 -- HWID fingerprint
@@ -250,7 +250,7 @@ function KeySystem:Validate(inputKey)
         -- HWID mismatch = shared key, block it immediately
         pcall(function()
             -- signal backend to block (Discord bot will handle the actual JSON update)
-            game:HttpGet("https://raw.githubusercontent.com/newdev27/ApexEngine/main/keys.json?block=" .. inputKey)
+            game:HttpGet("https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json?block=" .. inputKey)
         end)
         return false, "Key is locked to another device. Key has been flagged."
     end
@@ -258,7 +258,7 @@ function KeySystem:Validate(inputKey)
     -- First use: bind HWID
     if entry.hwid == nil or entry.hwid == "" then
         pcall(function()
-            game:HttpGet("https://raw.githubusercontent.com/newdev27/ApexEngine/main/keys.json?bind=" .. inputKey .. "&hwid=" .. hwid)
+            game:HttpGet("https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json?bind=" .. inputKey .. "&hwid=" .. hwid)
         end)
     end
 
