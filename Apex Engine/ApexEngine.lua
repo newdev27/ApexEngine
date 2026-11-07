@@ -380,7 +380,8 @@ function ApexEngine:CreateWindow(cfg)
                         cfg.ExpiresAt = entry.expires_at
                     end
                     keyGui:Destroy()
-                    StartGameLogic()
+                    -- StartGameLogic is defined after CreateWindow returns; flag it for post-init call
+                    Window._authed = true
                 else
                     statusLbl.Text = msg
                     statusLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -997,7 +998,7 @@ function ApexEngine:CreateWindow(cfg)
         gui:Destroy()
     end
 
-    if authed then task.spawn(StartGameLogic) end
+    Window._authed = authed
     return Window
 end
 
@@ -1885,5 +1886,7 @@ if ApexEngine.Flags["lua_autoload"] then
 end
 
 end -- StartGameLogic
+
+if Window._authed then task.spawn(StartGameLogic) end
 
 return ApexEngine
