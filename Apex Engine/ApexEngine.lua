@@ -265,7 +265,7 @@ function KeySystem:Validate(inputKey)
     -- Save locally
     writeFile(KEY_FILE, inputKey)
     writeFile(HWID_FILE, hwid)
-    return true, "OK"
+    return true, "OK", entry
 end
 
 function KeySystem:GetSaved()
@@ -308,8 +308,12 @@ function ApexEngine:CreateWindow(cfg)
     local authed = false
     local savedKey = KeySystem:GetSaved()
     if savedKey then
-        local ok, msg = KeySystem:Validate(savedKey)
+        local ok, msg, entry = KeySystem:Validate(savedKey)
         authed = ok
+        if ok and entry then
+            cfg.Tier      = entry.tier
+            cfg.ExpiresAt = entry.expires_at
+        end
         if not ok then warn("[ApexEngine] Saved key rejected: " .. msg) end
     end
 
@@ -366,10 +370,14 @@ function ApexEngine:CreateWindow(cfg)
             statusLbl.Text = "Checking..."
             statusLbl.TextColor3 = Theme.TextDisabled
             task.spawn(function()
-                local ok, msg = KeySystem:Validate(tb.Text)
+                local ok, msg, entry = KeySystem:Validate(tb.Text)
                 if ok then
                     authed = true
                     done = true
+                    if entry then
+                        cfg.Tier      = entry.tier
+                        cfg.ExpiresAt = entry.expires_at
+                    end
                     keyGui:Destroy()
                     StartGameLogic()
                 else
@@ -437,17 +445,33 @@ function ApexEngine:CreateWindow(cfg)
         BackgroundColor3 = Theme.WindowBg, BackgroundTransparency = 0.5, BorderSizePixel = 0, Parent = main })
     local av = New("ImageLabel", {
         Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(15, 460),
-        BackgroundColor3 = Theme.FrameActive, Image = cfg.Avatar or Icons.avatar, Parent = main,
+        BackgroundColor3 = Theme.FrameActive, Image = "", Parent = main,
     }, { Corner(100) })
-    if (cfg.Avatar or Icons.avatar) == "rbxassetid://0" then
-        pcall(function()
-            av.Image = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-        end)
+    pcall(function()
+        av.Image = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+    end)
+    Label({ Text = LocalPlayer.DisplayName, Size = UDim2.fromOffset(115, 14), Position = UDim2.fromOffset(50, 460), Parent = main })
+    Label({ Text = "License:", TextColor3 = Theme.TextDisabled, Size = UDim2.fromOffset(50, 14), Position = UDim2.fromOffset(50, 475), Parent = main })
+    local licLbl = Label({ Text = "...", TextColor3 = Theme.Accent, Size = UDim2.fromOffset(90, 14), Position = UDim2.fromOffset(102, 475), Parent = main })
+    local function updateLicLabel()
+        local expiresAt = cfg.ExpiresAt
+        local tier = (cfg.Tier or "LT"):upper()
+        if tier == "LT" then licLbl.Text = "Lifetime"
+        elseif tier == "FR" then licLbl.Text = "Free"
+        elseif expiresAt and type(expiresAt) == "number" then
+            local left = math.max(0, expiresAt - os.time())
+            if left == 0 then licLbl.Text = "Expired"; licLbl.TextColor3 = Color3.fromRGB(255,80,80); return end
+            local d = math.floor(left/86400)
+            local h = math.floor((left%86400)/3600)
+            local m = math.floor((left%3600)/60)
+            local s = left%60
+            if d > 0 then licLbl.Text = d.."d "..h.."h"
+            elseif h > 0 then licLbl.Text = h.."h "..m.."m"
+            else licLbl.Text = m.."m "..s.."s" end
+        else licLbl.Text = tier end
     end
-    Label({ Text = cfg.User or LocalPlayer.Name, Size = UDim2.fromOffset(115, 14), Position = UDim2.fromOffset(50, 460), Parent = main })
-    Label({ Text = "Till:", TextColor3 = Theme.TextDisabled, Size = UDim2.fromOffset(28, 14), Position = UDim2.fromOffset(50, 475), Parent = main })
-    Label({ Text = cfg.Till or "Lifetime", TextColor3 = Theme.Accent, Size = UDim2.fromOffset(90, 14),
-        Position = UDim2.fromOffset(80, 475), Parent = main })
+    updateLicLabel()
+    game:GetService("RunService").Heartbeat:Connect(updateLicLabel)
 
     local tabList = New("Frame", {
         Size = UDim2.fromOffset(150, 380), Position = UDim2.fromOffset(10, 70),
@@ -976,10 +1000,10 @@ function ApexEngine:CreateWindow(cfg)
     return Window
 end
 
+local StartGameLogic  -- forward declare so CreateWindow can reference it
+
 local Window = ApexEngine:CreateWindow({
-    Title = "APEX ENGINE",
-    User  = "Barlas",
-    Till  = "Lifetime",
+    Title  = "APEX ENGINE",
     OnSave = function(flags) print("[ApexEngine] saved", flags) end,
 })
 
@@ -1135,7 +1159,7 @@ m2:AddLabel("Menu key: Insert")
 -- ============================================================
 -- GAME LOGIC (only runs after auth)
 -- ============================================================
-local function StartGameLogic()
+StartGameLogic = function()
 local RunService = game:GetService("RunService")
 local Camera     = workspace.CurrentCamera
 
