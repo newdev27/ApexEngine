@@ -1139,4 +1139,99 @@ s2:AddCheckbox({ Name = "Allow scripts", Flag = "lua_allow" })
 s2:AddCheckbox({ Name = "Auto load", Flag = "lua_autoload" })
 s2:AddButton({ Name = "Reload scripts", Callback = function() print("scripts reloaded") end })
 
+-- ============================================================
+-- RIVALS GAME LOGIC
+-- ============================================================
+local RunService   = game:GetService("RunService")
+local Camera       = workspace.CurrentCamera
+local StarterGui   = game:GetService("StarterGui")
+
+-- FOV
+m1:AddSlider({ Name = "Field of view", Min = 70, Max = 120, Default = 70, Suffix = "°", Flag = "m_camfov", Callback = function(v)
+    Camera.FieldOfView = v
+end })
+Camera.FieldOfView = ApexEngine.Flags["m_camfov"] or 70
+
+-- Bhop
+local bhopping = false
+UserInputService.JumpRequest:Connect(function()
+    if ApexEngine.Flags["m_bhop"] then
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if hum and hrp and hrp.Velocity.Y < 1 then
+            hum.Jump = true
+        end
+    end
+end)
+RunService.Heartbeat:Connect(function()
+    if ApexEngine.Flags["m_bhop"] then
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if hum and hrp and math.abs(hrp.Velocity.Y) < 1 then
+            hum.Jump = true
+        end
+    end
+end)
+
+-- Auto Sprint
+RunService.Heartbeat:Connect(function()
+    if ApexEngine.Flags["m_sprint"] then
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.MoveDirection.Magnitude > 0 then
+            hum.WalkSpeed = 24
+        elseif hum then
+            hum.WalkSpeed = 16
+        end
+    end
+end)
+
+-- Remove Fog
+local origFogEnd, origFogStart = Lighting.FogEnd, Lighting.FogStart
+RunService.Heartbeat:Connect(function()
+    if ApexEngine.Flags["w_fog"] then
+        Lighting.FogEnd   = 100000
+        Lighting.FogStart = 100000
+    else
+        Lighting.FogEnd   = origFogEnd
+        Lighting.FogStart = origFogStart
+    end
+end)
+
+-- Brightness
+w1:AddSlider({ Name = "Brightness", Min = 0, Max = 10, Default = 2, Flag = "w_bright", Callback = function(v)
+    Lighting.Brightness = v
+end })
+
+-- Ambient color
+w1:AddColorPicker({ Name = "Ambient color", Default = Color3.fromRGB(120, 120, 160), Flag = "w_ambient_col", Callback = function(c)
+    if ApexEngine.Flags["w_ambient"] then
+        Lighting.Ambient        = c
+        Lighting.OutdoorAmbient = c
+    end
+end })
+w1:AddCheckbox({ Name = "Custom ambient", Flag = "w_ambient", Callback = function(v)
+    if not v then
+        Lighting.Ambient        = Color3.fromRGB(127, 127, 127)
+        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+    end
+end })
+
+-- Watermark
+local wmGui = Instance.new("ScreenGui", GetParentGui())
+wmGui.Name = "ApexWatermark"
+wmGui.ResetOnSpawn = false
+wmGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+local wmFrame = New("Frame", {
+    Size = UDim2.fromOffset(180, 24), Position = UDim2.fromOffset(8, 8),
+    BackgroundColor3 = Theme.WindowBg, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = wmGui,
+}, { Corner(4), Stroke() })
+Label({ Text = "APEX ENGINE  |  Rivals", Font = Theme.FontBold, TextSize = 12,
+    TextColor3 = Theme.Accent, Size = UDim2.fromScale(1,1), TextXAlignment = Enum.TextXAlignment.Center, Parent = wmFrame })
+RunService.Heartbeat:Connect(function()
+    wmFrame.Visible = ApexEngine.Flags["m_watermark"] ~= false
+end)
+
 return ApexEngine
