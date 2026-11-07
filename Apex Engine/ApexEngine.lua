@@ -978,6 +978,15 @@ miscG:AddCheckbox({ Name="Tracer",      Default=false, Flag="tracer_enabled" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
 miscG:AddDropdown({ Name="Tracer Origin", Items={"Bottom","Center","Top"}, Default="Bottom", Flag="tracer_origin" })
 
+-- Right: Target Lines
+local tlineG = CombatPage:AddGroup("Target Lines", Icons.dagger, "Right", 260)
+tlineG:AddCheckbox({ Name="Enabled",       Default=false, Flag="tl_enabled" })
+tlineG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,50,50), Flag="tl_col" })
+tlineG:AddDropdown({ Name="Target Part",   Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="tl_part" })
+tlineG:AddDropdown({ Name="Origin",        Items={"Bottom","Center","Mouse"}, Default="Bottom", Flag="tl_origin" })
+tlineG:AddCheckbox({ Name="Closest Only",  Default=true,  Flag="tl_closest" })
+tlineG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=800,Suffix="m",Flag="tl_maxdist" })
+
 -- ============================================================
 -- VISUAL TAB
 -- ============================================================
@@ -1040,6 +1049,7 @@ local PlayerPage = PlayerTab:AddSubtab("Movement")
 
 local moveG = PlayerPage:AddGroup("Movement", Icons.user, "Left", 160)
 moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" })
+moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
 moveG:AddSlider({   Name="Fly Speed",       Min=1,Max=100,Default=20,Flag="m_flyspeed" })
@@ -1232,7 +1242,8 @@ RunService.Heartbeat:Connect(function(dt)
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum and hum.Health > 0 and hum.MoveDirection.Magnitude > 0.05 then
-            hum.WalkSpeed = 20
+            local bonus = flags["m_omnisprint_bonus"] or 0
+            hum.WalkSpeed = 16 + bonus
         end
     end
 end)
@@ -1595,8 +1606,8 @@ do
         return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
     end
 
-    local BODY_PARTS = {"Head","UpperTorso","LowerTorso","LeftUpperArm","RightUpperArm","LeftUpperLeg","RightUpperLeg"}
-    -- Get 2D bounding box from character using only core body parts
+    -- R6 core body parts only
+    local BODY_PARTS = {"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}
     local function getCharBounds(char)
         local cam = workspace.CurrentCamera
         local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
@@ -1604,15 +1615,22 @@ do
         for _, name in ipairs(BODY_PARTS) do
             local part = char:FindFirstChild(name)
             if part and part:IsA("BasePart") then
-                local sp, onScreen = cam:WorldToViewportPoint(part.Position)
-                if onScreen and sp.Z > 0 then
-                    visible = true
-                    local r = part.Size.Magnitude * 0.5
-                    local edge = cam:WorldToViewportPoint(part.Position + Vector3.new(r,r,0))
-                    if sp.X < minX then minX = sp.X end
-                    if sp.Y < minY then minY = sp.Y end
-                    if sp.X > maxX then maxX = sp.X end
-                    if sp.Y > maxY then maxY = sp.Y end
+                -- project all 8 corners of the part's bounding box
+                local cf, sz = part.CFrame, part.Size * 0.5
+                for _, sx in ipairs({-1,1}) do
+                    for _, sy in ipairs({-1,1}) do
+                        for _, sz2 in ipairs({-1,1}) do
+                            local corner = cf * Vector3.new(sz.X*sx, sz.Y*sy, sz.Z*sz2)
+                            local sp, onScreen = cam:WorldToViewportPoint(corner)
+                            if onScreen and sp.Z > 0 then
+                                visible = true
+                                if sp.X < minX then minX = sp.X end
+                                if sp.Y < minY then minY = sp.Y end
+                                if sp.X > maxX then maxX = sp.X end
+                                if sp.Y > maxY then maxY = sp.Y end
+                            end
+                        end
+                    end
                 end
             end
         end
@@ -1655,7 +1673,7 @@ do
         nameL.Parent = espGui
         d.nameLabel = nameL
 
-        -- Health bar (bg + fill)
+        -- Health bar (bg + fill + text)
         local hBg = Instance.new("Frame")
         hBg.BackgroundColor3 = Color3.fromRGB(20,20,20)
         hBg.BorderSizePixel = 0
@@ -1664,10 +1682,24 @@ do
         local hFill = Instance.new("Frame")
         hFill.BackgroundColor3 = Color3.fromRGB(80,255,120)
         hFill.BorderSizePixel = 0
-        hFill.AnchorPoint = Vector2.new(0,1)
+        hFill.AnchorPoint = Vector2.new(0, 1)
+        hFill.Size = UDim2.fromScale(1, 1)
+        hFill.Position = UDim2.fromScale(0, 1)
         hFill.Parent = hBg
+        local hText = Instance.new("TextLabel")
+        hText.BackgroundTransparency = 1
+        hText.TextColor3 = Color3.new(1,1,1)
+        hText.TextStrokeTransparency = 0.4
+        hText.TextStrokeColor3 = Color3.new(0,0,0)
+        hText.Font = Enum.Font.GothamBold
+        hText.TextSize = 9
+        hText.TextXAlignment = Enum.TextXAlignment.Center
+        hText.Size = UDim2.new(1,0,0,10)
+        hText.Position = UDim2.new(0,0,1,1)
+        hText.Parent = hBg
         d.healthBg   = hBg
         d.healthFill = hFill
+        d.healthText = hText
 
         -- Distance label
         local distL = Instance.new("TextLabel")
@@ -1698,6 +1730,15 @@ do
         hl.Parent = espGui
         d.highlight = hl
 
+        -- Target line
+        local tl = Instance.new("Frame")
+        tl.BackgroundColor3 = Color3.fromRGB(255,50,50)
+        tl.BorderSizePixel = 0
+        tl.AnchorPoint = Vector2.new(0, 0.5)
+        tl.Visible = false
+        tl.Parent = espGui
+        d.targetLine = tl
+
         _espData[p] = d
     end
 
@@ -1710,16 +1751,19 @@ do
         pcall(function() d.distLabel:Destroy() end)
         pcall(function() d.tracer:Destroy() end)
         pcall(function() d.highlight:Destroy() end)
+        pcall(function() d.targetLine:Destroy() end)
         _espData[p] = nil
     end
 
     local function hideESP(d)
-        d.boxFrame.Visible  = false
-        d.nameLabel.Visible = false
-        d.healthBg.Visible  = false
-        d.distLabel.Visible = false
-        d.tracer.Visible    = false
-        d.highlight.Enabled = false
+        d.boxFrame.Visible   = false
+        d.nameLabel.Visible  = false
+        d.healthBg.Visible   = false
+        d.healthText.Visible = false
+        d.distLabel.Visible  = false
+        d.tracer.Visible     = false
+        d.highlight.Enabled  = false
+        d.targetLine.Visible = false
     end
 
     -- Draw a box using 4 line frames
@@ -1837,19 +1881,26 @@ do
                 d.nameLabel.Visible = false
             end
 
-            -- Health bar (left side, vertical)
+            -- Health bar (left side, vertical, grows bottom-up)
             if flags["esp_health"] then
                 local hp  = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                 local col = flags["esp_health_col"] or Color3.fromRGB(80,255,120)
-                local barW = 3
-                d.healthBg.Position = UDim2.fromOffset(x1 - barW - 2, y1)
+                -- color shifts green->yellow->red with hp
+                local r = math.clamp(2 * (1 - hp), 0, 1)
+                local g = math.clamp(2 * hp, 0, 1)
+                col = flags["esp_health_col"] or Color3.new(r, g, 0.1)
+                local barW = 4
+                d.healthBg.Position = UDim2.fromOffset(x1 - barW - 3, y1)
                 d.healthBg.Size     = UDim2.fromOffset(barW, bh)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
                 d.healthFill.Size     = UDim2.new(1, 0, hp, 0)
                 d.healthFill.Position = UDim2.new(0, 0, 1 - hp, 0)
+                d.healthText.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+                d.healthText.Visible = true
             else
                 d.healthBg.Visible = false
+                d.healthText.Visible = false
             end
 
             -- Distance
@@ -1889,6 +1940,65 @@ do
                 d.highlight.Enabled          = true
             else
                 d.highlight.Enabled = false
+            end
+
+            -- Target line (R6)
+            if flags["tl_enabled"] then
+                local tlMaxDist = flags["tl_maxdist"] or 800
+                local tlClosest = flags["tl_closest"] ~= false
+                -- skip if closest-only and this isn't the closest enemy
+                local skip = false
+                if tlClosest then
+                    local partName = flags["tl_part"] or "Head"
+                    local closest = getClosestEnemy and getClosestEnemy(partName, tlMaxDist)
+                    if not closest or closest.player ~= p then skip = true end
+                end
+                if not skip and dist <= (flags["tl_maxdist"] or 800) then
+                    local partName = flags["tl_part"] or "Head"
+                    -- R6 part name map
+                    local R6_MAP = {
+                        ["Head"]="Head", ["Torso"]="Torso",
+                        ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm",
+                        ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg",
+                    }
+                    local part = char:FindFirstChild(R6_MAP[partName] or partName)
+                    if part then
+                        local sp, onSc = cam:WorldToViewportPoint(part.Position)
+                        if onSc and sp.Z > 0 then
+                            local tx, ty = sp.X, sp.Y
+                            local tlOrigin = flags["tl_origin"] or "Bottom"
+                            local ox, oy
+                            if tlOrigin == "Center" then
+                                ox, oy = cam.ViewportSize.X/2, cam.ViewportSize.Y/2
+                            elseif tlOrigin == "Mouse" then
+                                local mp = UserInputService:GetMouseLocation()
+                                ox, oy = mp.X, mp.Y
+                            else
+                                ox, oy = cam.ViewportSize.X/2, cam.ViewportSize.Y
+                            end
+                            local dx, dy = tx-ox, ty-oy
+                            local len = math.sqrt(dx*dx+dy*dy)
+                            if len >= 1 then
+                                local col = flags["tl_col"] or Color3.fromRGB(255,50,50)
+                                d.targetLine.Position         = UDim2.fromOffset(ox, oy)
+                                d.targetLine.Size             = UDim2.fromOffset(len, 1)
+                                d.targetLine.Rotation         = math.deg(math.atan2(dy, dx))
+                                d.targetLine.BackgroundColor3 = col
+                                d.targetLine.Visible          = true
+                            else
+                                d.targetLine.Visible = false
+                            end
+                        else
+                            d.targetLine.Visible = false
+                        end
+                    else
+                        d.targetLine.Visible = false
+                    end
+                else
+                    d.targetLine.Visible = false
+                end
+            else
+                d.targetLine.Visible = false
             end
         end
 
