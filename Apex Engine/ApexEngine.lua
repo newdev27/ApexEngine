@@ -1,3 +1,9 @@
+
+--[[
+    Apex Engine — Brisk Survival cheat
+    Designed and developed by Barlas (discord: 5nqs)
+]]
+
 if getgenv().apexengine_loaded then
     while task.wait(99999999) do end
 end
@@ -741,7 +747,7 @@ function ApexEngine:CreateWindow(cfg)
                     }, { Corner(3), Stroke() })
                     local pv=Label({ Text=tostring(sel or ""), TextColor3=Theme.TextDisabled, ClipsDescendants=true,
                         Size=UDim2.new(1,-24,1,0), Position=UDim2.fromOffset(4,0), Parent=box })
-                    Label({ Text="▼", TextSize=9, TextXAlignment=Enum.TextXAlignment.Center,
+                    Label({ Text="v", TextSize=9, TextXAlignment=Enum.TextXAlignment.Center,
                         Size=UDim2.fromOffset(14,20), Position=UDim2.new(1,-17,0,0), Parent=box })
                     local popup=New("ScrollingFrame", {
                         Visible=false, ZIndex=50, Size=UDim2.fromOffset(130,0),
@@ -1553,7 +1559,7 @@ do
         return char and char:FindFirstChild("Head")
     end
 
-    -- World → screen with visibility check
+    -- World -> screen with visibility check
     local function worldToScreen(pos)
         local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(pos)
@@ -1907,7 +1913,7 @@ do
         Camera.CameraType = Enum.CameraType.Scriptable
         -- Lock mouse
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-        -- Mouse delta → yaw/pitch
+        -- Mouse delta -> yaw/pitch
         _fcInputConn = UserInputService.InputChanged:Connect(function(i)
             if not _fcActive then return end
             if i.UserInputType == Enum.UserInputType.MouseMovement then
