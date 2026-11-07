@@ -1437,9 +1437,20 @@ do
         end
     end))
 
-    -- ── Silent Aim ────────────────────────────────────────────
-    -- GunFire:FireServer(muzzlePos, origin, direction, gunName, serverTime, isADS, sessionId, shotSeq, droneViewPose)
-    -- We replace `direction` (arg 3 after self) with unit vector toward aim part.
+
+    -- R6 aim part resolver
+    local R6_PARTS = { Head="Head", Torso="Torso" }
+    R6_PARTS["Left Arm"]  = "Left Arm"
+    R6_PARTS["Right Arm"] = "Right Arm"
+    R6_PARTS["Left Leg"]  = "Left Leg"
+    R6_PARTS["Right Leg"] = "Right Leg"
+    local function getR6Part(char, name)
+        return char:FindFirstChild(R6_PARTS[name] or name)
+            or char:FindFirstChild("Torso")
+            or char:FindFirstChild("HumanoidRootPart")
+    end
+
+    -- Silent Aim
     local rs = game:GetService("ReplicatedStorage")
     task.spawn(function()
         local gf = rs:WaitForChild("GunFire", 15)
@@ -1448,36 +1459,32 @@ do
 
     local _saHooked = false
     trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not _saHooked and GunFire and hookfunction then
-            _saHooked = true
-            local orig = GunFire.FireServer
-            hookfunction(orig, newcclosure(function(self, ...)
-                local args = {...}
-                -- args: muzzlePos, origin, direction, gunName, serverTime, isADS, sessionId, shotSeq, ...
-                if flags["sa_enabled"] and UserInputService:IsKeyDown(flags["sa_key"] or Enum.KeyCode.Q) then
-                    local hitchance = flags["sa_hitchance"] or 100
-                    if math.random(1,100) <= hitchance then
-                        local partName = flags["sa_part"] or "Head"
-                        local fov      = flags["sa_fov"] or 80
-                        local target   = getClosestEnemy(partName, fov)
-                        if target then
-                            local part = getAimPart(target.char, partName)
-                            local muzzlePos = args[1]
-                            if part and typeof(muzzlePos) == "Vector3" then
-                                args[3] = (part.Position - muzzlePos).Unit
-                            end
+        if _saHooked or not GunFire or not hookfunction then return end
+        _saHooked = true
+        local orig = GunFire.FireServer
+        hookfunction(orig, newcclosure(function(self, ...)
+            local args = {...}
+            local flags = ApexEngine.Flags
+            if flags["sa_enabled"] then
+                local key = flags["sa_key"]
+                local keyHeld = (not key) or UserInputService:IsKeyDown(key)
+                if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
+                    local partName = flags["sa_part"] or "Head"
+                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
+                    if target then
+                        local part = getR6Part(target.char, partName)
+                        local muzzle = args[1]
+                        if part and typeof(muzzle) == "Vector3" then
+                            args[3] = (part.Position - muzzle).Unit
                         end
                     end
                 end
-                return orig(self, table.unpack(args))
-            end))
-        end
+            end
+            return orig(self, table.unpack(args))
+        end))
     end))
 
-    -- ── No Recoil ─────────────────────────────────────────────
-    -- The recoil RenderStep is bound as "Recoil_" .. tool.Name per ClientGun.
-    -- Unbinding it each frame when no_recoil is on is the cleanest approach.
+    -- No Recoil
     local _noRecoilUnbound = {}
     trackConnection(RunService.Heartbeat:Connect(function()
         local char = LocalPlayer.Character
@@ -1489,85 +1496,60 @@ do
                     RunService:UnbindFromRenderStep(bindName)
                     _noRecoilUnbound[bindName] = true
                 elseif _noRecoilUnbound[bindName] then
-                    -- Was unbound; ClientGun will rebind on next shot naturally
                     _noRecoilUnbound[bindName] = nil
                 end
             end
         end
     end))
 
-    -- ── Aimbot ────────────────────────────────────────────────
+    -- Aimbot
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
-        local key = flags["ab_key"] or Enum.KeyCode.E
-        if not UserInputService:IsKeyDown(key) then return end
-
+        if not UserInputService:IsKeyDown(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
-        local fov      = flags["ab_fov"] or 80
-        local smooth   = flags["ab_smooth"] or 10
-        local strength = (flags["ab_strength"] or 50) / 100
-
-        local target = getClosestEnemy(partName, fov)
+        local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
-
-        local part = getAimPart(target.char, partName)
+        local part = getR6Part(target.char, partName)
         if not part then return end
-
-        -- Prediction: lead target by velocity
         local targetPos = part.Position
         if flags["ab_predict"] then
-            local root = target.root
-            local vel  = root.AssemblyLinearVelocity
+            local vel = target.root.AssemblyLinearVelocity
             local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if myRoot then
-                local dist = (targetPos - myRoot.Position).Magnitude
-                local travelTime = dist / 500 -- approx bullet speed
-                targetPos = targetPos + vel * travelTime
+                targetPos = targetPos + vel * ((targetPos - myRoot.Position).Magnitude / 500)
             end
         end
-
         local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
-
         local vp = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local dx = (sp.X - cx) * strength
-        local dy = (sp.Y - cy) * strength
-        local lerpFactor = math.clamp(dt * (100 / smooth), 0, 1)
-
-        -- Move mouse toward target
+        local dx = sp.X - vp.X/2
+        local dy = sp.Y - vp.Y/2
+        local smooth = math.max(flags["ab_smooth"] or 10, 1)
+        local strength = (flags["ab_strength"] or 50) / 100
+        local step = math.clamp(dt * (1000 / smooth), 0, 1) * strength
         if mousemoverel then
-            mousemoverel(dx * lerpFactor, dy * lerpFactor)
-        elseif mouse1press then
-            -- fallback: CFrame camera nudge
+            mousemoverel(dx * step, dy * step)
+        else
             local cf = cam.CFrame
-            local targetCF = CFrame.lookAt(cf.Position, targetPos)
-            cam.CFrame = cf:Lerp(targetCF, lerpFactor * strength)
+            cam.CFrame = cf:Lerp(CFrame.lookAt(cf.Position, targetPos), step)
         end
     end))
 
-    -- ── Triggerbot ────────────────────────────────────────────
+    -- Triggerbot
     local _tbLastFire = 0
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
         if not flags["tb_enabled"] then return end
-        local key = flags["tb_key"] or Enum.KeyCode.CapsLock
-        if not UserInputService:IsKeyDown(key) then return end
-
-        local fov   = flags["tb_fov"] or 15
+        if not UserInputService:IsKeyDown(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
         local delay = (flags["tb_delay"] or 50) / 1000
         if os.clock() - _tbLastFire < delay then return end
-
-        local target = getClosestEnemy("Head", fov)
+        local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
         if not target then return end
-
         _tbLastFire = os.clock()
-        -- Simulate left click
         if mouse1press and mouse1release then
-            mouse1press()
-            task.delay(0.05, mouse1release)
+            mouse1press(); task.delay(0.05, mouse1release)
         end
     end))
 end
