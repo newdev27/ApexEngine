@@ -1066,9 +1066,9 @@ local LGen = Legitbot:AddSubtab("General")
 local l1 = LGen:AddGroup("Assist", Icons.mouse, "Left")
 l1:AddCheckbox({ Name = "Enabled", Flag = "lg_enabled" })
 l1:AddKeybind({ Name = "Key", Default = Enum.KeyCode.Q, Flag = "lg_key" })
+l1:AddCheckbox({ Name = "Hold to activate", Default = false, Flag = "lg_hold" })
 l1:AddDropdown({ Name = "Target part", Items = { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart" }, Default = "Head", Flag = "lg_part" })
 l1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 90, Suffix = "°", Flag = "lg_fov" })
-l1:AddSlider({ Name = "Strength", Min = 0, Max = 100, Default = 25, Suffix = "%", Flag = "lg_strength" })
 l1:AddSlider({ Name = "Smoothness", Min = 1, Max = 50, Default = 10, Flag = "lg_smooth" })
 l1:AddSlider({ Name = "Reaction time", Min = 0, Max = 500, Default = 120, Suffix = "ms", Flag = "lg_react" })
 local l2 = LGen:AddGroup("Draw", Icons.pallet, "Right")
@@ -1541,16 +1541,21 @@ lgCircle.Visible = false; lgCircle.Filled = false
 lgCircle.Thickness = 1; lgCircle.Color = Color3.new(1,1,1); lgCircle.NumSides = 64
 
 local lgHoldActive = false
+local lgToggleOn   = false
 local lgReactTimer = 0
 
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
-        lgHoldActive = true; lgReactTimer = 0
+        if ApexEngine.Flags["lg_hold"] then
+            lgHoldActive = true; lgReactTimer = 0
+        else
+            lgToggleOn = not lgToggleOn; lgReactTimer = 0
+        end
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
     if ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
-        lgHoldActive = false
+        if ApexEngine.Flags["lg_hold"] then lgHoldActive = false end
     end
 end)
 
@@ -1558,14 +1563,19 @@ end)
 -- RAGEBOT
 -- ============================================================
 local rgHoldActive = false
+local rgToggleOn   = false
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and ApexEngine.Flags["rg_key"] and i.KeyCode == ApexEngine.Flags["rg_key"] then
-        rgHoldActive = true
+        if ApexEngine.Flags["rg_hold"] then
+            rgHoldActive = true
+        else
+            rgToggleOn = not rgToggleOn
+        end
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
     if ApexEngine.Flags["rg_key"] and i.KeyCode == ApexEngine.Flags["rg_key"] then
-        rgHoldActive = false
+        if ApexEngine.Flags["rg_hold"] then rgHoldActive = false end
     end
 end)
 
@@ -1585,10 +1595,10 @@ RunService.Heartbeat:Connect(function(dt)
     local flags     = ApexEngine.Flags
     local vpCenter  = Camera.ViewportSize / 2
 
-    -- ── Legitbot FOV circle (always update when enabled) ──
+    -- ── Legitbot FOV circle (show whenever draw circle is on, independent of key) ──
     local lgEnabled = flags["lg_enabled"]
     local fovRadius = flags["lg_fov"] or 90
-    lgCircle.Visible = lgEnabled and flags["lg_circle"] ~= false or false
+    lgCircle.Visible = lgEnabled and flags["lg_circle"] ~= false
     if lgCircle.Visible then
         lgCircle.Radius    = fovRadius
         lgCircle.Position  = vpCenter
@@ -1598,8 +1608,8 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     -- ── Determine which systems are active this frame ──
-    local rgActive = flags["rg_enabled"] and (flags["rg_hold"] == false or rgHoldActive)
-    local lgActive = lgEnabled and lgHoldActive
+    local rgActive = flags["rg_enabled"] and (flags["rg_hold"] and rgHoldActive or (not flags["rg_hold"] and rgToggleOn))
+    local lgActive = lgEnabled and (flags["lg_hold"] and lgHoldActive or (not flags["lg_hold"] and lgToggleOn))
     local tbActive = flags["tb_enabled"]
 
     if not rgActive and not lgActive and not tbActive then
@@ -1644,12 +1654,11 @@ RunService.Heartbeat:Connect(function(dt)
     if lgActive and target then
         lgReactTimer += dt
         if lgReactTimer >= (flags["lg_react"] or 120) / 1000 then
-            local predPos  = predictPos(target, dt * 2)
-            local sp       = Camera:WorldToViewportPoint(predPos)
-            local delta    = Vector2.new(sp.X, sp.Y) - vpCenter
-            local strength = (flags["lg_strength"] or 25) / 100
-            local smooth   = math.max(flags["lg_smooth"] or 10, 1)
-            mousemoverel(delta.X * strength / smooth, delta.Y * strength / smooth)
+            local predPos = predictPos(target, dt * 2)
+            local smooth  = math.max(flags["lg_smooth"] or 10, 1)
+            -- rotate camera CFrame toward target; smooth=1 snaps instantly
+            local targetCF = CFrame.lookAt(Camera.CFrame.Position, predPos)
+            Camera.CFrame  = Camera.CFrame:Lerp(targetCF, 1 / smooth)
         end
     elseif not lgActive then
         lgReactTimer = 0
@@ -1658,26 +1667,23 @@ RunService.Heartbeat:Connect(function(dt)
     -- ── TRIGGERBOT ──
     if tbActive then
         tbCooldown = math.max(0, tbCooldown - dt)
-        -- check if crosshair is directly over an enemy (tight FOV check)
-        local tbFov = flags["tb_fov"] or 15
+        local tbFov    = flags["tb_fov"] or 15
         local tbTarget = getAimTarget(tbFov, flags["tb_part"] or "Head", true, flags["tb_vis"] ~= false)
-        local isOver = tbTarget ~= nil
-        if isOver and not tbWasOver then
-            -- just entered target — apply reaction delay
-            tbWasOver = true
-        end
-        if isOver and tbWasOver and tbCooldown <= 0 then
+        local isOver   = tbTarget ~= nil
+
+        -- fire on the leading edge (cursor just entered target) + cooldown guard
+        if isOver and not tbWasOver and tbCooldown <= 0 then
+            tbCooldown = (flags["tb_cooldown"] or 200) / 1000
             local delay = (flags["tb_delay"] or 50) / 1000
             task.delay(delay, function()
                 if not ApexEngine.Flags["tb_enabled"] then return end
-                -- simulate left click
                 mouse1press()
-                task.wait(0.05)
+                task.wait(0.06)
                 mouse1release()
             end)
-            tbCooldown = (flags["tb_cooldown"] or 200) / 1000
         end
-        if not isOver then tbWasOver = false end
+
+        tbWasOver = isOver
     end
 end)
 
@@ -1700,29 +1706,53 @@ pcall(function()
         gun.IsFullyAiming = function() return true end
     end
 
-    -- target finder using CollectionService Entity tag (same as reference)
+    -- SA target: picks closest entity to crosshair within sa_fov, no onScreen guard
+    -- tries Head first, falls back to HumanoidRootPart so edge-of-screen targets still register
+    local _saRayParams = RaycastParams.new()
+    _saRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
     local function saTarget()
         local center   = Camera.ViewportSize / 2
+        local camPos   = Camera.CFrame.Position
         local fov      = ApexEngine.Flags["sa_fov"] or 180
+        local wallbang = ApexEngine.Flags["sa_wallbang"]
         local bestPart, bestDist = nil, fov
+
         for _, entity in ipairs(cs:GetTagged("Entity")) do
             if entity == LocalPlayer.Character then continue end
             local hum = entity:FindFirstChildOfClass("Humanoid")
             if not hum or hum.Health <= 0 then continue end
-            local part = entity:FindFirstChild("Head", true)
+
+            -- prefer Head, fall back to HumanoidRootPart
+            local part = entity:FindFirstChild("Head")
+                      or entity:FindFirstChild("HumanoidRootPart")
             if not part or not part:IsA("BasePart") then continue end
-            local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
-            if not onScreen then continue end
+
+            -- use depth (Z) to confirm target is in front of camera, skip onScreen check
+            local sp = Camera:WorldToViewportPoint(part.Position)
+            if sp.Z <= 0 then continue end  -- behind camera
+
             local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-            if d < bestDist then bestDist = d; bestPart = part end
+            if d >= bestDist then continue end
+
+            -- wall check (skip if wallbang enabled)
+            if not wallbang then
+                _saRayParams.FilterDescendantsInstances = { LocalPlayer.Character, entity }
+                local hit = workspace:Raycast(camPos, part.Position - camPos, _saRayParams)
+                if hit then continue end
+            end
+
+            bestDist = d
+            bestPart = part
         end
         return bestPart
     end
 
-    -- build camdata table the same way the reference does
-    local function buildCamData(origin, part)
-        local cf = part.CFrame
-        local d  = {}
+    -- build camdata: use camera position as origin (not HRP) for accurate angle
+    local function buildCamData(part)
+        local origin = Camera.CFrame.Position
+        local cf     = part.CFrame
+        local d      = {}
         d[utf8.char(1)] = {
             [utf8.char(0)] = U:EncodeCFrame(CFrame.lookAt(origin, part.Position)),
             [utf8.char(1)] = U:EncodeCFrame(cf),
@@ -1732,7 +1762,7 @@ pcall(function()
         return d
     end
 
-    -- hook GetEntitiesFromRaycast to redirect ray toward target (aimbot)
+    -- hook GetEntitiesFromRaycast to redirect ray toward target
     local origRaycast = GU.GetEntitiesFromRaycast
     GU.GetEntitiesFromRaycast = function(self, envID, params, origin, dir, maxDist, ...)
         if ApexEngine.Flags["rg_enabled"] or ApexEngine.Flags["sa_enabled"] then
@@ -1752,10 +1782,9 @@ pcall(function()
     local saHook
     saHook = hookfunction(UseItem.FireServer, newcclosure(function(self, objID, enumVal, camdata, extra)
         if ApexEngine.Flags["sa_enabled"] and enumVal == startShootingEnum then
-            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local t    = saTarget()
-            if root and t then
-                camdata = buildCamData(root.Position, t)
+            local t = saTarget()
+            if t then
+                camdata = buildCamData(t)
             end
         end
         return saHook(self, objID, enumVal, camdata, extra)
