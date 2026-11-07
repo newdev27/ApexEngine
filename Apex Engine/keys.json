@@ -39,6 +39,14 @@
       "created_at": 1794058917,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-LTCAPP-QD54MD-LY": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794059514,
+      "expires_at": null,
+      "note": ""
     }
   }
 }
