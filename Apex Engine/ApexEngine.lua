@@ -1089,6 +1089,13 @@ b3:AddCheckbox({ Name = "Randomize body", Flag = "aa_body" })
 b3:AddSlider({ Name = "Body limit", Min = 0, Max = 60, Default = 58, Suffix = "°", Flag = "aa_bodylim" })
 b3:AddDropdown({ Name = "Fake mode", Items = { "Off", "Static", "Jitter", "Random" }, Flag = "aa_fake" })
 
+local SAGen = Ragebot:AddSubtab("Silent Aim")
+local sa1 = SAGen:AddGroup("Silent Aim", Icons.crosshairs, "Left")
+sa1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "sa_enabled" })
+sa1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 180, Suffix = "°", Flag = "sa_fov" })
+sa1:AddCheckbox({ Name = "Backtrack", Default = true, Flag = "sa_backtrack" })
+sa1:AddCheckbox({ Name = "Wall bang", Default = false, Flag = "sa_wallbang" })
+
 local LGen = Legitbot:AddSubtab("General")
 local l1 = LGen:AddGroup("Assist", Icons.mouse, "Left")
 l1:AddCheckbox({ Name = "Enabled", Flag = "lg_enabled" })
@@ -1304,206 +1311,181 @@ RunService.Heartbeat:Connect(function()
     local s = (ApexEngine.Flags["m_scale"] or 100) / 100
     Window.Main.Size = UDim2.fromOffset(math.floor(690 * s), math.floor(500 * s))
 end)
-
 -- ============================================================
 -- ESP SYSTEM
 -- ============================================================
-local espFolder = Instance.new("Folder", workspace)
-espFolder.Name = "ApexESP"
-
 local espObjects = {}
+
+local function newLine(thick, col)
+    local l = Drawing.new("Line")
+    l.Thickness = thick; l.Color = col; l.Visible = false
+    return l
+end
+local function newText(sz, col)
+    local t = Drawing.new("Text")
+    t.Size = sz; t.Color = col; t.Visible = false
+    t.Outline = true; t.OutlineColor = Color3.new(0,0,0)
+    t.Font = Drawing.Fonts.Plex
+    return t
+end
 
 local function removeESP(player)
     local o = espObjects[player]
     if not o then return end
-    pcall(function()
-        if o.highlight then o.highlight:Destroy() end
-        if o.billboard then o.billboard:Destroy() end
-        if o.box then for _, d in pairs(o.box) do d:Remove() end end
-        if o.tracer then o.tracer:Remove() end
-        if o.hpbar then for _, d in pairs(o.hpbar) do d:Remove() end end
-    end)
+    for i = 1, 8 do pcall(function() o.box[i]:Remove() end) end
+    pcall(function() o.hpBg:Remove() end)
+    pcall(function() o.hpFill:Remove() end)
+    pcall(function() o.name:Remove() end)
+    pcall(function() o.dist:Remove() end)
+    pcall(function() o.tracer:Remove() end)
+    pcall(function() if o.highlight then o.highlight:Destroy() end end)
     espObjects[player] = nil
 end
 
 local function createESP(player)
-    if not player.Character then return end
-    local char = player.Character
-    local hrp  = char:FindFirstChild("HumanoidRootPart")
-    local hum  = char:FindFirstChildOfClass("Humanoid")
-    local head = char:FindFirstChild("Head")
-    if not hrp or not hum or not head then return end
     removeESP(player)
-    local obj = {}
-
+    local o = {}
+    o.box = {}
+    for i = 1, 8 do o.box[i] = newLine(1, Color3.new(1,1,1)) end
+    o.hpBg   = newLine(3, Color3.fromRGB(20,20,20))
+    o.hpFill = newLine(3, Color3.fromRGB(80,255,120))
+    o.name   = newText(13, Color3.new(1,1,1))
+    o.dist   = newText(11, Color3.fromRGB(180,180,180))
+    o.tracer = newLine(1, Color3.fromRGB(0,180,255))
     local hl = Instance.new("Highlight")
-    hl.Adornee = char; hl.FillTransparency = 0.5; hl.OutlineTransparency = 0
-    hl.Enabled = false; hl.Parent = espFolder
-    obj.highlight = hl
-
-    local bb = Instance.new("BillboardGui")
-    bb.Adornee = head; bb.Size = UDim2.fromOffset(120, 40)
-    bb.StudsOffset = Vector3.new(0, 2.2, 0); bb.AlwaysOnTop = true
-    bb.ResetOnSpawn = false; bb.Parent = espFolder
-    local nameLbl = Instance.new("TextLabel", bb)
-    nameLbl.Size = UDim2.new(1,0,0.5,0); nameLbl.BackgroundTransparency = 1
-    nameLbl.TextSize = 13; nameLbl.Font = Enum.Font.GothamBold
-    nameLbl.TextStrokeTransparency = 0.5; nameLbl.TextStrokeColor3 = Color3.new(0,0,0)
-    obj.billboard = bb; obj.nameLbl = nameLbl
-
-    -- Box: 4 lines for Full, 8 lines for Corner
-    local box = {}
-    for i = 1, 8 do
-        local l = Drawing.new("Line"); l.Thickness = 1; l.Visible = false; box[i] = l
-    end
-    obj.box = box
-
-    -- Health bar: 2 lines (bg + fill)
-    local hpbar = {}
-    for i = 1, 2 do
-        local l = Drawing.new("Line"); l.Thickness = 3; l.Visible = false; hpbar[i] = l
-    end
-    hpbar[1].Color = Color3.fromRGB(30, 30, 30)
-    obj.hpbar = hpbar
-
-    local tracer = Drawing.new("Line")
-    tracer.Thickness = 1; tracer.Visible = false
-    obj.tracer = tracer
-
-    espObjects[player] = obj
+    hl.FillTransparency = 0.6; hl.OutlineTransparency = 0
+    hl.Enabled = false; hl.Parent = workspace
+    o.highlight = hl
+    espObjects[player] = o
 end
 
-local function getBoxScreen(char)
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local _, size = char:GetBoundingBox()
-    local cf = hrp.CFrame
-    local corners = {
-        cf * CFrame.new(-size.X/2, -size.Y/2, 0),
-        cf * CFrame.new( size.X/2, -size.Y/2, 0),
-        cf * CFrame.new( size.X/2,  size.Y/2, 0),
-        cf * CFrame.new(-size.X/2,  size.Y/2, 0),
-    }
-    local pts = {}
-    for _, c in ipairs(corners) do
-        local sp, on = Camera:WorldToViewportPoint(c.Position)
-        if not on then return nil end
-        pts[#pts+1] = Vector2.new(sp.X, sp.Y)
-    end
-    return pts
+local function toScreen(pos)
+    local sp, vis = Camera:WorldToViewportPoint(pos)
+    if not vis then return nil end
+    return Vector2.new(sp.X, sp.Y)
 end
 
-local function drawBox(obj, pts, color, style)
-    if not pts then
-        for _, l in pairs(obj.box) do l.Visible = false end return
-    end
-    local tl, tr, br, bl = pts[4], pts[3], pts[2], pts[1]
-    if style == "Corner" then
-        local clen = (tr.X - tl.X) * 0.25
-        local clenY = (bl.Y - tl.Y) * 0.25
-        -- top-left
-        obj.box[1].From=tl; obj.box[1].To=tl+Vector2.new(clen,0)
-        obj.box[2].From=tl; obj.box[2].To=tl+Vector2.new(0,clenY)
-        -- top-right
-        obj.box[3].From=tr; obj.box[3].To=tr+Vector2.new(-clen,0)
-        obj.box[4].From=tr; obj.box[4].To=tr+Vector2.new(0,clenY)
-        -- bottom-left
-        obj.box[5].From=bl; obj.box[5].To=bl+Vector2.new(clen,0)
-        obj.box[6].From=bl; obj.box[6].To=bl+Vector2.new(0,-clenY)
-        -- bottom-right
-        obj.box[7].From=br; obj.box[7].To=br+Vector2.new(-clen,0)
-        obj.box[8].From=br; obj.box[8].To=br+Vector2.new(0,-clenY)
-        for i=1,8 do obj.box[i].Color=color; obj.box[i].Visible=true end
-    else -- Full
-        local edges = {{tl,tr},{tr,br},{br,bl},{bl,tl}}
-        for i=1,4 do
-            obj.box[i].From=edges[i][1]; obj.box[i].To=edges[i][2]
-            obj.box[i].Color=color; obj.box[i].Visible=true
-        end
-        for i=5,8 do obj.box[i].Visible=false end
-    end
+local function hideESP(o)
+    for i = 1, 8 do o.box[i].Visible = false end
+    o.hpBg.Visible = false; o.hpFill.Visible = false
+    o.name.Visible = false; o.dist.Visible = false
+    o.tracer.Visible = false
+    if o.highlight then o.highlight.Enabled = false end
 end
 
-local function drawHealthBar(obj, pts, hpPct, show)
-    if not pts or not show then
-        for _, l in pairs(obj.hpbar) do l.Visible = false end return
-    end
-    local tl, bl = pts[4], pts[1]
-    local x = tl.X - 6
-    local barH = bl.Y - tl.Y
-    obj.hpbar[1].From = Vector2.new(x, tl.Y); obj.hpbar[1].To = Vector2.new(x, bl.Y)
-    obj.hpbar[1].Visible = true
-    obj.hpbar[2].From = Vector2.new(x, bl.Y); obj.hpbar[2].To = Vector2.new(x, bl.Y - barH * hpPct)
-    obj.hpbar[2].Color = Color3.fromRGB(math.floor(255*(1-hpPct)), math.floor(255*hpPct), 60)
-    obj.hpbar[2].Visible = true
-end
-
-RunService.Heartbeat:Connect(function()
-    -- Throttle ESP to every 3 frames to reduce detection surface
-    if _espFrame % 3 ~= 0 then return end
-
-    local espOn   = ApexEngine.Flags["pl_box"] or ApexEngine.Flags["pl_name"] or ApexEngine.Flags["pl_chams"] or ApexEngine.Flags["pl_tracer"] or ApexEngine.Flags["pl_health"]
-    local maxDist = ApexEngine.Flags["pl_maxdist"] or 1500
-    local camPos  = Camera.CFrame.Position
-    local vpSize  = Camera.ViewportSize
-    local boxStyle = ApexEngine.Flags["pl_box_style"] or "Full"
+RunService.RenderStepped:Connect(function()
+    local flags      = ApexEngine.Flags
+    local showBox    = flags["pl_box"]
+    local showName   = flags["pl_name"]
+    local showDist   = flags["pl_dist"]
+    local showHp     = flags["pl_health"]
+    local showTracer = flags["pl_tracer"]
+    local showChams  = flags["pl_chams"]
+    local maxDist    = flags["pl_maxdist"] or 1500
+    local boxStyle   = flags["pl_box_style"] or "Corner"
+    local boxColor   = flags["pl_box_col"]   or Color3.new(1,1,1)
+    local nameColor  = flags["pl_name_col"]  or Color3.new(1,1,1)
+    local tracerCol  = flags["pl_tracer_col"] or Color3.fromRGB(0,180,255)
+    local fillColor  = flags["pl_fill"]    or Color3.fromRGB(255,60,90)
+    local outColor   = flags["pl_outline"] or Color3.new(1,1,1)
+    local vpSize     = Camera.ViewportSize
+    local camPos     = Camera.CFrame.Position
+    local tOrigin    = flags["pl_tracer_origin"]
+    local fromY      = tOrigin == "Top" and 0 or tOrigin == "Center" and vpSize.Y/2 or vpSize.Y
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
-        local char = player.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        local head = char and char:FindFirstChild("Head")
-
-        if not espOn or not char or not hrp or not hum or not head then
-            local o = espObjects[player]
-            if o then
-                if o.highlight then o.highlight.Enabled = false end
-                if o.billboard then o.billboard.Enabled = false end
-                if o.box then for _, l in pairs(o.box) do l.Visible = false end end
-                if o.hpbar then for _, l in pairs(o.hpbar) do l.Visible = false end end
-                if o.tracer then o.tracer.Visible = false end
-            end
-            continue
-        end
-
-        if not espObjects[player] then createESP(player) end
         local o = espObjects[player]
         if not o then continue end
 
-        local dist     = (camPos - hrp.Position).Magnitude
-        local inRange  = dist <= maxDist
-        local sp, onScreen = Camera:WorldToViewportPoint(hrp.Position)
-        local hpPct    = hum.Health / math.max(hum.MaxHealth, 1)
+        local char  = player.Character
+        local hrp   = char and char:FindFirstChild("HumanoidRootPart")
+        local hum   = char and char:FindFirstChildOfClass("Humanoid")
+        local head  = char and char:FindFirstChild("Head")
+        local alive = hum and hum.Health > 0
+
+        if not alive or not hrp or not head then hideESP(o); continue end
+
+        local dist = (camPos - hrp.Position).Magnitude
+        if dist > maxDist then hideESP(o); continue end
+
+        local headSP = toScreen(head.Position + Vector3.new(0, head.Size.Y/2, 0))
+        local feetSP = toScreen(hrp.Position  - Vector3.new(0, 3, 0))
 
         if o.highlight then
-            o.highlight.Enabled      = ApexEngine.Flags["pl_chams"] and inRange or false
-            o.highlight.FillColor    = ApexEngine.Flags["pl_fill"]    or Color3.fromRGB(255,60,90)
-            o.highlight.OutlineColor = ApexEngine.Flags["pl_outline"] or Color3.new(1,1,1)
+            o.highlight.Adornee      = showChams and char or nil
+            o.highlight.Enabled      = showChams == true
+            o.highlight.FillColor    = fillColor
+            o.highlight.OutlineColor = outColor
         end
 
-        if o.billboard then
-            o.billboard.Enabled = inRange and onScreen and (ApexEngine.Flags["pl_name"] or ApexEngine.Flags["pl_dist"])
-            if o.nameLbl then
-                o.nameLbl.Visible    = ApexEngine.Flags["pl_name"] or false
-                o.nameLbl.TextColor3 = ApexEngine.Flags["pl_name_col"] or Color3.new(1,1,1)
-                local distStr = ApexEngine.Flags["pl_dist"] and (" ["..math.floor(dist).."m]") or ""
-                o.nameLbl.Text = player.Name .. distStr
+        if not headSP or not feetSP then
+            for i=1,8 do o.box[i].Visible=false end
+            o.hpBg.Visible=false; o.hpFill.Visible=false
+            o.name.Visible=false; o.dist.Visible=false
+            o.tracer.Visible=false
+            continue
+        end
+
+        local h     = math.abs(feetSP.Y - headSP.Y)
+        local w     = h * 0.55
+        local cx    = headSP.X
+        local top   = headSP.Y
+        local bot   = feetSP.Y
+        local left  = cx - w/2
+        local right = cx + w/2
+        local tl = Vector2.new(left, top)
+        local tr = Vector2.new(right,top)
+        local br = Vector2.new(right,bot)
+        local bl = Vector2.new(left, bot)
+
+        if showBox then
+            if boxStyle == "Corner" then
+                local cw = w*0.25; local ch = h*0.25
+                o.box[1].From=tl; o.box[1].To=tl+Vector2.new(cw,0)
+                o.box[2].From=tl; o.box[2].To=tl+Vector2.new(0,ch)
+                o.box[3].From=tr; o.box[3].To=tr+Vector2.new(-cw,0)
+                o.box[4].From=tr; o.box[4].To=tr+Vector2.new(0,ch)
+                o.box[5].From=bl; o.box[5].To=bl+Vector2.new(cw,0)
+                o.box[6].From=bl; o.box[6].To=bl+Vector2.new(0,-ch)
+                o.box[7].From=br; o.box[7].To=br+Vector2.new(-cw,0)
+                o.box[8].From=br; o.box[8].To=br+Vector2.new(0,-ch)
+                for i=1,8 do o.box[i].Color=boxColor; o.box[i].Visible=true end
+            else
+                o.box[1].From=tl; o.box[1].To=tr
+                o.box[2].From=tr; o.box[2].To=br
+                o.box[3].From=br; o.box[3].To=bl
+                o.box[4].From=bl; o.box[4].To=tl
+                for i=1,4 do o.box[i].Color=boxColor; o.box[i].Visible=true end
+                for i=5,8 do o.box[i].Visible=false end
             end
+        else
+            for i=1,8 do o.box[i].Visible=false end
         end
 
-        local pts = (ApexEngine.Flags["pl_box"] and inRange and onScreen) and getBoxScreen(char) or nil
-        drawBox(o, pts, ApexEngine.Flags["pl_box_col"] or Color3.new(1,1,1), boxStyle)
-        drawHealthBar(o, pts, hpPct, ApexEngine.Flags["pl_health"] and inRange and onScreen)
+        if showHp then
+            local pct = hum.Health / math.max(hum.MaxHealth,1)
+            local bx  = left - 5
+            o.hpBg.From=Vector2.new(bx,top); o.hpBg.To=Vector2.new(bx,bot); o.hpBg.Visible=true
+            o.hpFill.From=Vector2.new(bx,bot); o.hpFill.To=Vector2.new(bx,bot-h*pct)
+            o.hpFill.Color=Color3.fromRGB(math.floor(255*(1-pct)),math.floor(255*pct),60)
+            o.hpFill.Visible=true
+        else o.hpBg.Visible=false; o.hpFill.Visible=false end
 
-        if o.tracer then
-            local origin = ApexEngine.Flags["pl_tracer_origin"]
-            local fromY  = origin == "Top" and 0 or origin == "Center" and vpSize.Y/2 or vpSize.Y
-            o.tracer.From    = Vector2.new(vpSize.X/2, fromY)
-            o.tracer.To      = Vector2.new(sp.X, sp.Y)
-            o.tracer.Color   = ApexEngine.Flags["pl_tracer_col"] or Color3.fromRGB(0,180,255)
-            o.tracer.Visible = ApexEngine.Flags["pl_tracer"] and inRange and onScreen or false
-        end
+        if showName then
+            o.name.Text=player.DisplayName; o.name.Color=nameColor
+            o.name.Position=Vector2.new(cx, top-16); o.name.Center=true; o.name.Visible=true
+        else o.name.Visible=false end
+
+        if showDist then
+            o.dist.Text=math.floor(dist).."m"
+            o.dist.Position=Vector2.new(cx, bot+2); o.dist.Center=true; o.dist.Visible=true
+        else o.dist.Visible=false end
+
+        if showTracer then
+            o.tracer.From=Vector2.new(vpSize.X/2,fromY); o.tracer.To=Vector2.new(cx,bot)
+            o.tracer.Color=tracerCol; o.tracer.Visible=true
+        else o.tracer.Visible=false end
     end
 end)
 
@@ -1512,7 +1494,10 @@ Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function() task.wait(1); createESP(p) end)
 end)
 for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer and p.Character then createESP(p) end
+    if p ~= LocalPlayer then
+        createESP(p)
+        p.CharacterAdded:Connect(function() task.wait(1); createESP(p) end)
+    end
 end
 
 -- ============================================================
@@ -1542,7 +1527,7 @@ local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
         if visCheck then
             local dir = part.Position - camPos
             local params = RaycastParams.new()
-            params.FilterDescendantsInstances = { LocalPlayer.Character, espFolder }
+            params.FilterDescendantsInstances = { LocalPlayer.Character }
             params.FilterType = Enum.RaycastFilterType.Exclude
             local hit = workspace:Raycast(camPos, dir.Unit * dir.Magnitude, params)
             if hit and not char:IsAncestorOf(hit.Instance) and hit.Instance ~= part then continue end
@@ -1661,52 +1646,105 @@ end)
 -- ============================================================
 -- SILENT AIM
 -- ============================================================
--- Hooks tool RemoteEvent FireServer and redirects CFrame arg toward target.
--- Never writes Camera.CFrame (server-detectable).
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SharedModules = require(ReplicatedStorage.SharedModules.Global)
 
-local function getSilentTarget()
-    return getAimTarget(ApexEngine.Flags["rg_fov"] or 180, "Head", true, false)
-end
-
-local saHooked = {}
-
-local function tryHookRemote(remote)
-    if not remote or not remote:IsA("RemoteEvent") then return end
-    if saHooked[remote] then return end
-    saHooked[remote] = true
-    local n = remote.Name:lower()
-    if not (n:find("fire") or n:find("shoot") or n:find("attack") or n:find("hit")) then return end
-    pcall(function()
-        local orig = remote.FireServer
-        hookfunction(orig, function(self, ...)
-            if not (ApexEngine.Flags["rg_enabled"] and rgHoldActive) then
-                return orig(self, ...)
-            end
-            local target = getSilentTarget()
-            if not target then return orig(self, ...) end
-            local aimCF = CFrame.lookAt(Camera.CFrame.Position, target.Position)
-            local args = {...}
-            for i, v in ipairs(args) do
-                if typeof(v) == "CFrame" then args[i] = aimCF; break end
-            end
-            return orig(self, table.unpack(args))
-        end)
-    end)
-end
-
-local function hookCharTools(char)
-    if not char then return end
-    local function scanTool(v)
-        if not v:IsA("Tool") then return end
-        for _, d in ipairs(v:GetDescendants()) do tryHookRemote(d) end
-        v.DescendantAdded:Connect(tryHookRemote)
+local function wwguard(old, new)
+    return function(...)
+        local consts = debug.getconstants(2)
+        if table.find(consts, "StackSize") then return old(...) end
+        return new(...)
     end
-    for _, v in ipairs(char:GetChildren()) do scanTool(v) end
-    char.ChildAdded:Connect(scanTool)
 end
 
-if LocalPlayer.Character then hookCharTools(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(hookCharTools)
+local function _solveTime(origin, speed, targetPos, gY_abs)
+    local toTarget = targetPos - origin
+    local toTargetXY = Vector3.new(toTarget.X, 0, toTarget.Z)
+    local distXY = toTargetXY.Magnitude
+    if speed <= 0.01 then return nil, nil end
+    local launch_dir = toTarget.Unit
+    local time_est = distXY / speed
+    for i = 1, 3 do
+        local compensated = targetPos + Vector3.new(0, 0.5 * gY_abs * (distXY/speed)^2, 0)
+        launch_dir = (compensated - origin).Unit
+        time_est = distXY / (speed * Vector3.new(launch_dir.X, 0, launch_dir.Z).Magnitude)
+        if time_est ~= time_est or time_est == math.huge then time_est = toTarget.Magnitude / speed end
+    end
+    return launch_dir, time_est
+end
+
+local function getSpreadVector(seed, fireDir, accuracyRad)
+    local Rnd = Random.new(seed)
+    local cone = CFrame.Angles(0,0,Rnd:NextNumber(0,2*math.pi)) * CFrame.Angles(math.acos(Rnd:NextNumber(math.cos(accuracyRad),1)),0,0)
+    return (CFrame.new(Vector3.new(), fireDir) * cone).LookVector
+end
+
+local markedBullets = {}
+
+local function forceHit(info)
+    task.wait(info.travelTime)
+    if not info.targetPart or not info.targetPart.Parent then markedBullets[info.bulletId]=nil; return end
+    local targetRef = SharedModules.Network:GetReference(Players:GetPlayerFromCharacter(info.targetModel) or info.targetModel, "CharacterPart")
+    if not targetRef then markedBullets[info.bulletId]=nil; return end
+    local objPos    = info.targetPart.CFrame:PointToObjectSpace(info.hitPos)
+    local objNormal = info.targetPart.CFrame:VectorToObjectSpace(-info.dir.Unit)
+    local objInc    = info.targetPart.CFrame:VectorToObjectSpace(info.dir.Unit)
+    SharedModules.Network:FireServer("ProjectileEvent", info.bulletId, SharedModules.SyncedTime:GetTime(), "Final",
+        targetRef, objPos, objNormal, objInc, info.hitPos, -info.dir.Unit, info.targetPart.Material.Name)
+    task.defer(SharedModules.Network.FireServer, SharedModules.Network, "RemoveProjectile", info.bulletId)
+    markedBullets[info.bulletId] = nil
+end
+
+local oldFireServer = SharedModules.Network.FireServer
+SharedModules.Network.FireServer = wwguard(oldFireServer, function(self_net, action, ...)
+    local args = table.pack(...)
+    if action == "InitProjectiles" and ApexEngine.Flags["sa_enabled"] then
+        local target = getAimTarget(ApexEngine.Flags["sa_fov"] or 180, "Head", true, false)
+        local projectileData = args[2]
+        if target and projectileData and type(projectileData) == "table" then
+            local gun = SharedModules.PlayerCharacter:GetEquippedItem()
+            local gs = gun and gun.SharedData
+            if gs then
+                local projSpeed = gs.ProjectilePower or 200
+                local gravY_abs = math.abs(((gs.Gravity and gs.Gravity.Y) or -64.348) * (gs.GravityMultiplier or 1))
+                if type(projectileData.power) == "number" and type(projectileData.drawStart) == "number" then
+                    local pct = math.min(projectileData.power, 1)
+                    projSpeed = (gs.MinPower or 50) + ((gs.MaxPower or 150) - (gs.MinPower or 50)) * pct
+                end
+                local dir, travelTime = _solveTime(projectileData.origin, projSpeed, target.Position, gravY_abs)
+                if dir and travelTime then
+                    local spreadRad = math.rad(12.5) * math.clamp(1 - (gs.ProjectileAccuracy or 1), 0, 1)
+                    projectileData.direction = getSpreadVector(projectileData.seed, dir, spreadRad)
+                    projectileData.accuracy = 1
+                    local bulletIds = args[3]
+                    oldFireServer(self_net, action, table.unpack(args, 1, args.n))
+                    if ApexEngine.Flags["sa_backtrack"] then
+                        local canHit = true
+                        if not ApexEngine.Flags["sa_wallbang"] then
+                            local params = RaycastParams.new()
+                            params.FilterDescendantsInstances = { LocalPlayer.Character }
+                            params.FilterType = Enum.RaycastFilterType.Exclude
+                            local dir3 = target.Position - Camera.CFrame.Position
+                            local hit = workspace:Raycast(Camera.CFrame.Position, dir3.Unit * dir3.Magnitude, params)
+                            canHit = not hit or target.Parent:IsAncestorOf(hit.Instance)
+                        end
+                        if canHit then
+                            for _, bid in ipairs(bulletIds) do
+                                markedBullets[bid] = true
+                                task.spawn(forceHit, { targetPart=target, targetModel=target.Parent,
+                                    hitPos=target.Position, dir=dir, bulletId=bid, travelTime=travelTime })
+                            end
+                        end
+                    end
+                    return
+                end
+            end
+        end
+    elseif (action == "ProjectileEvent" or action == "RemoveProjectile") and markedBullets[args[1]] then
+        return
+    end
+    return oldFireServer(self_net, action, table.unpack(args, 1, args.n))
+end)
 
 -- ============================================================
 -- CONFIG SYSTEM
@@ -1805,8 +1843,6 @@ local function cleanupSprint()
 end
 LocalPlayer.CharacterAdded:Connect(function(char)
     cleanupSprint()
-    -- re-hook tools on new character
-    hookCharTools(char)
 end)
 
 -- ============================================================
