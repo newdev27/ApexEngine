@@ -1067,7 +1067,10 @@ local LGen = Legitbot:AddSubtab("General")
 local l1 = LGen:AddGroup("Assist", Icons.mouse, "Left")
 l1:AddCheckbox({ Name = "Enabled", Flag = "lg_enabled" })
 l1:AddKeybind({ Name = "Key", Default = Enum.KeyCode.Q, Flag = "lg_key" })
+l1:AddDropdown({ Name = "Target part", Items = { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart" }, Default = "Head", Flag = "lg_part" })
+l1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 90, Suffix = "°", Flag = "lg_fov" })
 l1:AddSlider({ Name = "Strength", Min = 0, Max = 100, Default = 25, Suffix = "%", Flag = "lg_strength" })
+l1:AddSlider({ Name = "Smoothness", Min = 1, Max = 50, Default = 10, Flag = "lg_smooth" })
 l1:AddSlider({ Name = "Reaction time", Min = 0, Max = 500, Default = 120, Suffix = "ms", Flag = "lg_react" })
 local l2 = LGen:AddGroup("Draw", Icons.pallet, "Right")
 l2:AddCheckbox({ Name = "Draw circle", Default = true, Flag = "lg_circle" })
@@ -1127,97 +1130,126 @@ m2:AddCheckbox({ Name = "Keybind list", Default = true, Flag = "m_keybinds" })
 m2:AddSlider({ Name = "Menu scale", Min = 50, Max = 150, Default = 100, Suffix = "%", Flag = "m_scale" })
 m2:AddLabel("Menu key: Insert")
 
-local SGen = Scripts:AddSubtab("Configs")
-local s1 = SGen:AddGroup("Configs", Icons.save, "Left")
-s1:AddDropdown({ Name = "Config", Items = { "default", "legit", "rage", "custom" }, Flag = "cfg_sel" })
-s1:AddTextbox({ Name = "New config", Flag = "cfg_name" })
-s1:AddButton({ Name = "Create", Callback = function() print("config created") end })
-s1:AddButton({ Name = "Load", Callback = function() print("config loaded") end })
-s1:AddButton({ Name = "Delete", Callback = function() print("config deleted") end })
-local s2 = SGen:AddGroup("Lua", Icons.code, "Right")
-s2:AddCheckbox({ Name = "Allow scripts", Flag = "lua_allow" })
-s2:AddCheckbox({ Name = "Auto load", Flag = "lua_autoload" })
-s2:AddButton({ Name = "Reload scripts", Callback = function() print("scripts reloaded") end })
+-- ============================================================
+-- GAME DETECTION
+-- ============================================================
+local RunService = game:GetService("RunService")
+local Camera     = workspace.CurrentCamera
+
+math.randomseed(tick())
+
+local RIVALS_PLACE_ID = 317625359962
+local IS_RIVALS = game.PlaceId == RIVALS_PLACE_ID
+local GAME_NAME = IS_RIVALS and "Rivals" or "Universal"
 
 -- ============================================================
--- RIVALS GAME LOGIC
+-- SHARED MOVEMENT / WORLD LOGIC (works in any game)
 -- ============================================================
-local RunService   = game:GetService("RunService")
-local Camera       = workspace.CurrentCamera
-local StarterGui   = game:GetService("StarterGui")
-
--- FOV
-m1:AddSlider({ Name = "Field of view", Min = 70, Max = 120, Default = 70, Suffix = "°", Flag = "m_camfov", Callback = function(v)
-    Camera.FieldOfView = v
-end })
 Camera.FieldOfView = ApexEngine.Flags["m_camfov"] or 70
 
--- Bhop
-local bhopping = false
+-- Bhop: use firesignal on Jump instead of writing hum.Jump directly
+local function safejump(hum)
+    pcall(function()
+        if firesignal then
+            firesignal(hum.Jumping, true)
+        else
+            hum.Jump = true
+        end
+    end)
+end
+
 UserInputService.JumpRequest:Connect(function()
     if ApexEngine.Flags["m_bhop"] then
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if hum and hrp and hrp.Velocity.Y < 1 then
-            hum.Jump = true
-        end
-    end
-end)
-RunService.Heartbeat:Connect(function()
-    if ApexEngine.Flags["m_bhop"] then
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if hum and hrp and math.abs(hrp.Velocity.Y) < 1 then
-            hum.Jump = true
-        end
+        if hum and hrp and hrp.Velocity.Y < 1 then safejump(hum) end
     end
 end)
 
--- Auto Sprint
-RunService.Heartbeat:Connect(function()
-    if ApexEngine.Flags["m_sprint"] then
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if hum and hum.MoveDirection.Magnitude > 0 then
-            hum.WalkSpeed = 24
-        elseif hum then
-            hum.WalkSpeed = 16
+-- Auto Sprint: LinearVelocity (BodyVelocity is deprecated)
+local sprintLV = nil
+local function setSprintLV(hrp, active)
+    pcall(function()
+        if active then
+            if not sprintLV or not sprintLV.Parent then
+                local att = Instance.new("Attachment", hrp)
+                sprintLV = Instance.new("LinearVelocity")
+                sprintLV.Attachment0 = att
+                sprintLV.MaxForce = 1e4
+                sprintLV.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+                sprintLV.RelativeTo = Enum.ActuatorRelativeTo.World
+                sprintLV.Parent = hrp
+            end
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local dir = hum and hum.MoveDirection or Vector3.zero
+            sprintLV.VectorVelocity = Vector3.new(dir.X * 24, hrp.AssemblyLinearVelocity.Y, dir.Z * 24)
+        else
+            if sprintLV and sprintLV.Parent then
+                local att = sprintLV.Attachment0
+                sprintLV:Destroy()
+                if att then att:Destroy() end
+            end
+            sprintLV = nil
         end
-    end
-end)
+    end)
+end
 
--- Remove Fog
 local origFogEnd, origFogStart = Lighting.FogEnd, Lighting.FogStart
-RunService.Heartbeat:Connect(function()
+local origBrightness = Lighting.Brightness
+local _espFrame = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    _espFrame += 1
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+
+    Camera.FieldOfView = ApexEngine.Flags["m_camfov"] or 70
+
+    -- Bhop
+    if ApexEngine.Flags["m_bhop"] and hum and hrp and math.abs(hrp.Velocity.Y) < 1 then
+        safejump(hum)
+    end
+
+    -- Auto Sprint via LinearVelocity (avoids WalkSpeed write)
+    if ApexEngine.Flags["m_sprint"] and hrp then
+        setSprintLV(hrp, hum and hum.MoveDirection.Magnitude > 0)
+    elseif sprintLV then
+        setSprintLV(nil, false)
+    end
+
+    -- Fog
     if ApexEngine.Flags["w_fog"] then
-        Lighting.FogEnd   = 100000
-        Lighting.FogStart = 100000
+        Lighting.FogEnd = 100000; Lighting.FogStart = 100000
     else
-        Lighting.FogEnd   = origFogEnd
-        Lighting.FogStart = origFogStart
+        Lighting.FogEnd = origFogEnd; Lighting.FogStart = origFogStart
+    end
+
+    -- Brightness
+    Lighting.Brightness = ApexEngine.Flags["w_bright"] or origBrightness
+
+    -- Ambient
+    if ApexEngine.Flags["w_ambient"] then
+        local c = ApexEngine.Flags["w_ambient_col"] or Color3.fromRGB(120,120,160)
+        Lighting.Ambient = c; Lighting.OutdoorAmbient = c
+    end
+
+    -- Time of day
+    if ApexEngine.Flags["w_time"] then
+        Lighting.ClockTime = ApexEngine.Flags["w_time"] or 14
     end
 end)
 
--- Brightness
-w1:AddSlider({ Name = "Brightness", Min = 0, Max = 10, Default = 2, Flag = "w_bright", Callback = function(v)
-    Lighting.Brightness = v
-end })
-
--- Ambient color
-w1:AddColorPicker({ Name = "Ambient color", Default = Color3.fromRGB(120, 120, 160), Flag = "w_ambient_col", Callback = function(c)
-    if ApexEngine.Flags["w_ambient"] then
-        Lighting.Ambient        = c
-        Lighting.OutdoorAmbient = c
-    end
-end })
-w1:AddCheckbox({ Name = "Custom ambient", Flag = "w_ambient", Callback = function(v)
-    if not v then
-        Lighting.Ambient        = Color3.fromRGB(127, 127, 127)
-        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
-    end
-end })
+-- Bloom
+local bloomEffect = Lighting:FindFirstChildOfClass("BloomEffect")
+if not bloomEffect then
+    bloomEffect = Instance.new("BloomEffect", Lighting)
+end
+RunService.Heartbeat:Connect(function()
+    bloomEffect.Enabled   = ApexEngine.Flags["w_bloom"] ~= false
+    bloomEffect.Intensity = (ApexEngine.Flags["w_bloom_int"] or 40) / 100 * 2
+end)
 
 -- Watermark
 local wmGui = Instance.new("ScreenGui", GetParentGui())
@@ -1225,13 +1257,605 @@ wmGui.Name = "ApexWatermark"
 wmGui.ResetOnSpawn = false
 wmGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 local wmFrame = New("Frame", {
-    Size = UDim2.fromOffset(180, 24), Position = UDim2.fromOffset(8, 8),
+    Size = UDim2.fromOffset(200, 24), Position = UDim2.fromOffset(8, 8),
     BackgroundColor3 = Theme.WindowBg, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = wmGui,
 }, { Corner(4), Stroke() })
-Label({ Text = "APEX ENGINE  |  Rivals", Font = Theme.FontBold, TextSize = 12,
+local wmLabel = Label({ Text = "APEX ENGINE  |  " .. GAME_NAME, Font = Theme.FontBold, TextSize = 12,
     TextColor3 = Theme.Accent, Size = UDim2.fromScale(1,1), TextXAlignment = Enum.TextXAlignment.Center, Parent = wmFrame })
 RunService.Heartbeat:Connect(function()
     wmFrame.Visible = ApexEngine.Flags["m_watermark"] ~= false
 end)
+
+-- Live accent color
+RunService.Heartbeat:Connect(function()
+    local c = ApexEngine.Flags["m_accent"]
+    if c then Theme.Accent = c end
+end)
+
+-- Menu scale
+RunService.Heartbeat:Connect(function()
+    local s = (ApexEngine.Flags["m_scale"] or 100) / 100
+    Window.Main.Size = UDim2.fromOffset(math.floor(690 * s), math.floor(500 * s))
+end)
+
+-- ============================================================
+-- ESP SYSTEM
+-- ============================================================
+local espFolder = Instance.new("Folder", workspace)
+espFolder.Name = "ApexESP"
+
+local espObjects = {}
+
+local function removeESP(player)
+    local o = espObjects[player]
+    if not o then return end
+    pcall(function()
+        if o.highlight then o.highlight:Destroy() end
+        if o.billboard then o.billboard:Destroy() end
+        if o.box then for _, d in pairs(o.box) do d:Remove() end end
+        if o.tracer then o.tracer:Remove() end
+        if o.hpbar then for _, d in pairs(o.hpbar) do d:Remove() end end
+    end)
+    espObjects[player] = nil
+end
+
+local function createESP(player)
+    if not player.Character then return end
+    local char = player.Character
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local head = char:FindFirstChild("Head")
+    if not hrp or not hum or not head then return end
+    removeESP(player)
+    local obj = {}
+
+    local hl = Instance.new("Highlight")
+    hl.Adornee = char; hl.FillTransparency = 0.5; hl.OutlineTransparency = 0
+    hl.Enabled = false; hl.Parent = espFolder
+    obj.highlight = hl
+
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = head; bb.Size = UDim2.fromOffset(120, 40)
+    bb.StudsOffset = Vector3.new(0, 2.2, 0); bb.AlwaysOnTop = true
+    bb.ResetOnSpawn = false; bb.Parent = espFolder
+    local nameLbl = Instance.new("TextLabel", bb)
+    nameLbl.Size = UDim2.new(1,0,0.5,0); nameLbl.BackgroundTransparency = 1
+    nameLbl.TextSize = 13; nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextStrokeTransparency = 0.5; nameLbl.TextStrokeColor3 = Color3.new(0,0,0)
+    obj.billboard = bb; obj.nameLbl = nameLbl
+
+    -- Box: 4 lines for Full, 8 lines for Corner
+    local box = {}
+    for i = 1, 8 do
+        local l = Drawing.new("Line"); l.Thickness = 1; l.Visible = false; box[i] = l
+    end
+    obj.box = box
+
+    -- Health bar: 2 lines (bg + fill)
+    local hpbar = {}
+    for i = 1, 2 do
+        local l = Drawing.new("Line"); l.Thickness = 3; l.Visible = false; hpbar[i] = l
+    end
+    hpbar[1].Color = Color3.fromRGB(30, 30, 30)
+    obj.hpbar = hpbar
+
+    local tracer = Drawing.new("Line")
+    tracer.Thickness = 1; tracer.Visible = false
+    obj.tracer = tracer
+
+    espObjects[player] = obj
+end
+
+local function getBoxScreen(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local _, size = char:GetBoundingBox()
+    local cf = hrp.CFrame
+    local corners = {
+        cf * CFrame.new(-size.X/2, -size.Y/2, 0),
+        cf * CFrame.new( size.X/2, -size.Y/2, 0),
+        cf * CFrame.new( size.X/2,  size.Y/2, 0),
+        cf * CFrame.new(-size.X/2,  size.Y/2, 0),
+    }
+    local pts = {}
+    for _, c in ipairs(corners) do
+        local sp, on = Camera:WorldToViewportPoint(c.Position)
+        if not on then return nil end
+        pts[#pts+1] = Vector2.new(sp.X, sp.Y)
+    end
+    return pts
+end
+
+local function drawBox(obj, pts, color, style)
+    if not pts then
+        for _, l in pairs(obj.box) do l.Visible = false end return
+    end
+    local tl, tr, br, bl = pts[4], pts[3], pts[2], pts[1]
+    if style == "Corner" then
+        local clen = (tr.X - tl.X) * 0.25
+        local clenY = (bl.Y - tl.Y) * 0.25
+        -- top-left
+        obj.box[1].From=tl; obj.box[1].To=tl+Vector2.new(clen,0)
+        obj.box[2].From=tl; obj.box[2].To=tl+Vector2.new(0,clenY)
+        -- top-right
+        obj.box[3].From=tr; obj.box[3].To=tr+Vector2.new(-clen,0)
+        obj.box[4].From=tr; obj.box[4].To=tr+Vector2.new(0,clenY)
+        -- bottom-left
+        obj.box[5].From=bl; obj.box[5].To=bl+Vector2.new(clen,0)
+        obj.box[6].From=bl; obj.box[6].To=bl+Vector2.new(0,-clenY)
+        -- bottom-right
+        obj.box[7].From=br; obj.box[7].To=br+Vector2.new(-clen,0)
+        obj.box[8].From=br; obj.box[8].To=br+Vector2.new(0,-clenY)
+        for i=1,8 do obj.box[i].Color=color; obj.box[i].Visible=true end
+    else -- Full
+        local edges = {{tl,tr},{tr,br},{br,bl},{bl,tl}}
+        for i=1,4 do
+            obj.box[i].From=edges[i][1]; obj.box[i].To=edges[i][2]
+            obj.box[i].Color=color; obj.box[i].Visible=true
+        end
+        for i=5,8 do obj.box[i].Visible=false end
+    end
+end
+
+local function drawHealthBar(obj, pts, hpPct, show)
+    if not pts or not show then
+        for _, l in pairs(obj.hpbar) do l.Visible = false end return
+    end
+    local tl, bl = pts[4], pts[1]
+    local x = tl.X - 6
+    local barH = bl.Y - tl.Y
+    obj.hpbar[1].From = Vector2.new(x, tl.Y); obj.hpbar[1].To = Vector2.new(x, bl.Y)
+    obj.hpbar[1].Visible = true
+    obj.hpbar[2].From = Vector2.new(x, bl.Y); obj.hpbar[2].To = Vector2.new(x, bl.Y - barH * hpPct)
+    obj.hpbar[2].Color = Color3.fromRGB(math.floor(255*(1-hpPct)), math.floor(255*hpPct), 60)
+    obj.hpbar[2].Visible = true
+end
+
+RunService.Heartbeat:Connect(function()
+    -- Throttle ESP to every 3 frames to reduce detection surface
+    if _espFrame % 3 ~= 0 then return end
+
+    local espOn   = ApexEngine.Flags["pl_box"] or ApexEngine.Flags["pl_name"] or ApexEngine.Flags["pl_chams"] or ApexEngine.Flags["pl_tracer"] or ApexEngine.Flags["pl_health"]
+    local maxDist = ApexEngine.Flags["pl_maxdist"] or 1500
+    local camPos  = Camera.CFrame.Position
+    local vpSize  = Camera.ViewportSize
+    local boxStyle = ApexEngine.Flags["pl_box_style"] or "Full"
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local char = player.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local head = char and char:FindFirstChild("Head")
+
+        if not espOn or not char or not hrp or not hum or not head then
+            local o = espObjects[player]
+            if o then
+                if o.highlight then o.highlight.Enabled = false end
+                if o.billboard then o.billboard.Enabled = false end
+                if o.box then for _, l in pairs(o.box) do l.Visible = false end end
+                if o.hpbar then for _, l in pairs(o.hpbar) do l.Visible = false end end
+                if o.tracer then o.tracer.Visible = false end
+            end
+            continue
+        end
+
+        if not espObjects[player] then createESP(player) end
+        local o = espObjects[player]
+        if not o then continue end
+
+        local dist     = (camPos - hrp.Position).Magnitude
+        local inRange  = dist <= maxDist
+        local sp, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        local hpPct    = hum.Health / math.max(hum.MaxHealth, 1)
+
+        if o.highlight then
+            o.highlight.Enabled      = ApexEngine.Flags["pl_chams"] and inRange or false
+            o.highlight.FillColor    = ApexEngine.Flags["pl_fill"]    or Color3.fromRGB(255,60,90)
+            o.highlight.OutlineColor = ApexEngine.Flags["pl_outline"] or Color3.new(1,1,1)
+        end
+
+        if o.billboard then
+            o.billboard.Enabled = inRange and onScreen and (ApexEngine.Flags["pl_name"] or ApexEngine.Flags["pl_dist"])
+            if o.nameLbl then
+                o.nameLbl.Visible    = ApexEngine.Flags["pl_name"] or false
+                o.nameLbl.TextColor3 = ApexEngine.Flags["pl_name_col"] or Color3.new(1,1,1)
+                local distStr = ApexEngine.Flags["pl_dist"] and (" ["..math.floor(dist).."m]") or ""
+                o.nameLbl.Text = player.Name .. distStr
+            end
+        end
+
+        local pts = (ApexEngine.Flags["pl_box"] and inRange and onScreen) and getBoxScreen(char) or nil
+        drawBox(o, pts, ApexEngine.Flags["pl_box_col"] or Color3.new(1,1,1), boxStyle)
+        drawHealthBar(o, pts, hpPct, ApexEngine.Flags["pl_health"] and inRange and onScreen)
+
+        if o.tracer then
+            local origin = ApexEngine.Flags["pl_tracer_origin"]
+            local fromY  = origin == "Top" and 0 or origin == "Center" and vpSize.Y/2 or vpSize.Y
+            o.tracer.From    = Vector2.new(vpSize.X/2, fromY)
+            o.tracer.To      = Vector2.new(sp.X, sp.Y)
+            o.tracer.Color   = ApexEngine.Flags["pl_tracer_col"] or Color3.fromRGB(0,180,255)
+            o.tracer.Visible = ApexEngine.Flags["pl_tracer"] and inRange and onScreen or false
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(removeESP)
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function() task.wait(1); createESP(p) end)
+end)
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer and p.Character then createESP(p) end
+end
+
+-- ============================================================
+-- AIMBOT SHARED
+-- ============================================================
+local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
+    local vpCenter = Camera.ViewportSize / 2
+    local camPos   = Camera.CFrame.Position
+    local myTeam   = LocalPlayer.Team
+    local bestDist, bestPart, bestChar = fovRadius, nil, nil
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if skipTeam and player.Team == myTeam then continue end
+        local char = player.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        local part = char:FindFirstChild(partName) or char:FindFirstChild("HumanoidRootPart")
+        if not part then continue end
+
+        local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+        local screenDist = (Vector2.new(sp.X, sp.Y) - vpCenter).Magnitude
+        if screenDist >= bestDist then continue end
+
+        if visCheck then
+            local dir = part.Position - camPos
+            local params = RaycastParams.new()
+            params.FilterDescendantsInstances = { LocalPlayer.Character, espFolder }
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            local hit = workspace:Raycast(camPos, dir.Unit * dir.Magnitude, params)
+            if hit and not char:IsAncestorOf(hit.Instance) and hit.Instance ~= part then continue end
+        end
+
+        bestDist = screenDist
+        bestPart = part
+        bestChar = char
+    end
+    return bestPart, bestChar
+end
+
+local function predictPos(part, dt)
+    local hrp = part.Parent and part.Parent:FindFirstChild("HumanoidRootPart")
+    if not hrp then return part.Position end
+    return part.Position + hrp.AssemblyLinearVelocity * dt
+end
+
+-- ============================================================
+-- LEGITBOT
+-- ============================================================
+local lgCircle = Drawing.new("Circle")
+lgCircle.Visible = false; lgCircle.Filled = false
+lgCircle.Thickness = 1; lgCircle.Color = Color3.new(1,1,1); lgCircle.NumSides = 64
+
+local lgHoldActive = false
+local lgReactTimer = 0
+local lgFired = false
+
+UserInputService.InputBegan:Connect(function(i, gp)
+    if not gp and ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
+        lgHoldActive = true; lgReactTimer = 0; lgFired = false
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
+        lgHoldActive = false; lgFired = false
+    end
+end)
+
+RunService.Heartbeat:Connect(function(dt)
+    local vpCenter  = Camera.ViewportSize / 2
+    local fovRadius = ApexEngine.Flags["lg_fov"] or 90
+
+    lgCircle.Visible   = ApexEngine.Flags["lg_circle"] ~= false
+    lgCircle.Radius    = fovRadius
+    lgCircle.Position  = vpCenter
+    lgCircle.Color     = ApexEngine.Flags["lg_circle_col"] or Color3.new(1,1,1)
+    lgCircle.Thickness = ApexEngine.Flags["lg_thick"] or 1
+    lgCircle.Filled    = ApexEngine.Flags["lg_filled"] or false
+
+    if not ApexEngine.Flags["lg_enabled"] or not lgHoldActive then return end
+
+    lgReactTimer += dt
+    if lgReactTimer < (ApexEngine.Flags["lg_react"] or 120) / 1000 then return end
+    lgFired = true
+
+    local target = getAimTarget(fovRadius, ApexEngine.Flags["lg_part"] or "Head", true, true)
+    if not target then return end
+
+    local predPos  = predictPos(target, dt * 2)
+    local sp       = Camera:WorldToViewportPoint(predPos)
+    local delta    = (Vector2.new(sp.X, sp.Y) - vpCenter)
+    local strength = (ApexEngine.Flags["lg_strength"] or 25) / 100
+    local smooth   = math.max(ApexEngine.Flags["lg_smooth"] or 10, 1)
+    mousemoverel(delta.X * strength / smooth, delta.Y * strength / smooth)
+end)
+
+-- ============================================================
+-- RAGEBOT
+-- ============================================================
+local rgHoldActive = false
+UserInputService.InputBegan:Connect(function(i, gp)
+    if not gp and ApexEngine.Flags["rg_key"] and i.KeyCode == ApexEngine.Flags["rg_key"] then
+        rgHoldActive = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if ApexEngine.Flags["rg_key"] and i.KeyCode == ApexEngine.Flags["rg_key"] then
+        rgHoldActive = false
+    end
+end)
+
+local rgDelayTimer = 0
+RunService.Heartbeat:Connect(function(dt)
+    if not ApexEngine.Flags["rg_enabled"] then return end
+    if not rgHoldActive then return end
+
+    rgDelayTimer += dt
+    local delaySec = (ApexEngine.Flags["rg_delay"] or 50) / 1000
+    if rgDelayTimer < delaySec then return end
+    rgDelayTimer = 0
+
+    local fov      = ApexEngine.Flags["rg_fov"] or 90
+    local partName = "Head"
+    local skipTeam = true
+    local target, tchar = getAimTarget(fov, partName, skipTeam, ApexEngine.Flags["adv_visible"] ~= false)
+    if not target then return end
+
+    local maxDist = ApexEngine.Flags["rg_dist"] or 300
+    local hrp = tchar and tchar:FindFirstChild("HumanoidRootPart")
+    if hrp and (Camera.CFrame.Position - hrp.Position).Magnitude > maxDist then return end
+
+    local smooth = math.max(ApexEngine.Flags["rg_smooth"] or 0, 1)
+    local predPos = predictPos(target, 0.05)
+    local sp = Camera:WorldToViewportPoint(predPos)
+    local vpCenter = Camera.ViewportSize / 2
+    local delta = Vector2.new(sp.X, sp.Y) - vpCenter
+    -- Jitter: randomize by adv_random % to avoid bot pattern detection
+    local jitterPct = (ApexEngine.Flags["adv_random"] or 10) / 100
+    local jx = (math.random() - 0.5) * 2 * jitterPct * delta.X
+    local jy = (math.random() - 0.5) * 2 * jitterPct * delta.Y
+    mousemoverel((delta.X + jx) / smooth, (delta.Y + jy) / smooth)
+end)
+
+-- ============================================================
+-- SILENT AIM
+-- ============================================================
+-- Hooks tool RemoteEvent FireServer and redirects CFrame arg toward target.
+-- Never writes Camera.CFrame (server-detectable).
+
+local function getSilentTarget()
+    return getAimTarget(ApexEngine.Flags["rg_fov"] or 180, "Head", true, false)
+end
+
+local saHooked = {}
+
+local function tryHookRemote(remote)
+    if not remote or not remote:IsA("RemoteEvent") then return end
+    if saHooked[remote] then return end
+    saHooked[remote] = true
+    local n = remote.Name:lower()
+    if not (n:find("fire") or n:find("shoot") or n:find("attack") or n:find("hit")) then return end
+    pcall(function()
+        local orig = remote.FireServer
+        hookfunction(orig, function(self, ...)
+            if not (ApexEngine.Flags["rg_enabled"] and rgHoldActive) then
+                return orig(self, ...)
+            end
+            local target = getSilentTarget()
+            if not target then return orig(self, ...) end
+            local aimCF = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+            local args = {...}
+            for i, v in ipairs(args) do
+                if typeof(v) == "CFrame" then args[i] = aimCF; break end
+            end
+            return orig(self, table.unpack(args))
+        end)
+    end)
+end
+
+local function hookCharTools(char)
+    if not char then return end
+    local function scanTool(v)
+        if not v:IsA("Tool") then return end
+        for _, d in ipairs(v:GetDescendants()) do tryHookRemote(d) end
+        v.DescendantAdded:Connect(tryHookRemote)
+    end
+    for _, v in ipairs(char:GetChildren()) do scanTool(v) end
+    char.ChildAdded:Connect(scanTool)
+end
+
+if LocalPlayer.Character then hookCharTools(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(hookCharTools)
+
+-- ============================================================
+-- CONFIG SYSTEM
+-- ============================================================
+local CFG_FOLDER = "ApexEngine/configs"
+if isfolder and not isfolder(CFG_FOLDER) then
+    pcall(function() makefolder(CFG_FOLDER) end)
+end
+
+local function listConfigs()
+    local list = {}
+    if listfiles then
+        pcall(function()
+            for _, f in ipairs(listfiles(CFG_FOLDER)) do
+                local name = f:match("([^/\\]+)%.json$")
+                if name then list[#list+1] = name end
+            end
+        end)
+    end
+    if #list == 0 then list = { "default" } end
+    return list
+end
+
+local cfgDropdown
+local function saveConfig(name)
+    if not name or name == "" then return end
+    local data = {}
+    for k, v in pairs(ApexEngine.Flags) do
+        local t = type(v)
+        if t == "boolean" or t == "number" or t == "string" then
+            data[k] = v
+        elseif t == "userdata" and typeof(v) == "Color3" then
+            data[k] = { r = v.R, g = v.G, b = v.B }
+        end
+    end
+    pcall(function()
+        writefile(CFG_FOLDER .. "/" .. name .. ".json", HttpService:JSONEncode(data))
+    end)
+end
+
+local function loadConfig(name)
+    if not name or name == "" then return end
+    local raw = readFile(CFG_FOLDER .. "/" .. name .. ".json")
+    if not raw then return end
+    local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not ok or not data then return end
+    for k, v in pairs(data) do
+        if type(v) == "table" and v.r then
+            ApexEngine.Flags[k] = Color3.new(v.r, v.g, v.b)
+        else
+            ApexEngine.Flags[k] = v
+        end
+    end
+end
+
+local function deleteConfig(name)
+    if not name or name == "" then return end
+    pcall(function() delfile(CFG_FOLDER .. "/" .. name .. ".json") end)
+end
+
+-- Wire up config buttons
+local SGen = Scripts:AddSubtab("Configs")
+local s1 = SGen:AddGroup("Configs", Icons.save, "Left")
+cfgDropdown = s1:AddDropdown({ Name = "Config", Items = listConfigs(), Flag = "cfg_sel" })
+local cfgNameBox = s1:AddTextbox({ Name = "New config", Flag = "cfg_name" })
+s1:AddButton({ Name = "Save", Callback = function()
+    local name = ApexEngine.Flags["cfg_name"]
+    if not name or name == "" then name = ApexEngine.Flags["cfg_sel"] end
+    saveConfig(name)
+    cfgDropdown:Refresh(listConfigs())
+end })
+s1:AddButton({ Name = "Load", Callback = function()
+    loadConfig(ApexEngine.Flags["cfg_sel"])
+end })
+s1:AddButton({ Name = "Delete", Callback = function()
+    deleteConfig(ApexEngine.Flags["cfg_sel"])
+    cfgDropdown:Refresh(listConfigs())
+end })
+local s2 = SGen:AddGroup("Lua", Icons.code, "Right")
+s2:AddCheckbox({ Name = "Allow scripts", Flag = "lua_allow" })
+s2:AddCheckbox({ Name = "Auto load", Flag = "lua_autoload" })
+s2:AddButton({ Name = "Reload scripts", Callback = function() print("scripts reloaded") end })
+
+-- ============================================================
+-- SPRINT CLEANUP ON RESPAWN
+-- ============================================================
+local function cleanupSprint()
+    pcall(function()
+        if sprintLV and sprintLV.Parent then
+            local att = sprintLV.Attachment0
+            sprintLV:Destroy()
+            if att then att:Destroy() end
+        end
+        sprintLV = nil
+    end)
+end
+LocalPlayer.CharacterAdded:Connect(function(char)
+    cleanupSprint()
+    -- re-hook tools on new character
+    hookCharTools(char)
+end)
+
+-- ============================================================
+-- KEYBIND LIST
+-- ============================================================
+local kbGui = Instance.new("ScreenGui", GetParentGui())
+kbGui.Name = "ApexKeybinds"
+kbGui.ResetOnSpawn = false
+kbGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+
+local kbFrame = New("Frame", {
+    Size = UDim2.fromOffset(160, 10),
+    Position = UDim2.new(1, -168, 1, -8),
+    BackgroundColor3 = Theme.WindowBg,
+    BackgroundTransparency = 0.3,
+    BorderSizePixel = 0,
+    Parent = kbGui,
+}, { Corner(4), Stroke() })
+
+New("UIListLayout", {
+    Padding = UDim.new(0, 2),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    VerticalAlignment = Enum.VerticalAlignment.Bottom,
+    Parent = kbFrame,
+})
+
+local kbEntries = {}
+local KB_WATCH = {
+    { flag = "lg_key",  label = "Legitbot" },
+    { flag = "rg_key",  label = "Ragebot"  },
+    { flag = "m_zoom",  label = "Zoom"     },
+    { flag = "aa_left", label = "AA Left"  },
+    { flag = "aa_right",label = "AA Right" },
+    { flag = "aa_back", label = "AA Back"  },
+}
+
+for i, kb in ipairs(KB_WATCH) do
+    local row = New("Frame", {
+        Size = UDim2.new(1, 0, 0, 16),
+        BackgroundTransparency = 1,
+        LayoutOrder = i,
+        Parent = kbFrame,
+    })
+    Label({ Text = kb.label, TextColor3 = Theme.TextDisabled,
+        TextSize = 11, Size = UDim2.new(0.6, 0, 1, 0), Parent = row })
+    local valLbl = Label({ Text = "None", TextColor3 = Theme.Accent,
+        TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right,
+        Size = UDim2.new(0.4, -4, 1, 0), Position = UDim2.new(0.6, 0, 0, 0), Parent = row })
+    kbEntries[kb.flag] = valLbl
+end
+
+RunService.Heartbeat:Connect(function()
+    local show = ApexEngine.Flags["m_keybinds"] ~= false
+    kbGui.Enabled = show
+    if not show then return end
+    local totalH = 0
+    for _, kb in ipairs(KB_WATCH) do
+        local key = ApexEngine.Flags[kb.flag]
+        local lbl = kbEntries[kb.flag]
+        if lbl then
+            lbl.Text = key and key.Name or "None"
+            lbl.Parent.Visible = key ~= nil
+            if key then totalH += 18 end
+        end
+    end
+    kbFrame.Size = UDim2.fromOffset(160, math.max(totalH, 10))
+end)
+
+-- ============================================================
+-- CONFIG AUTO-LOAD
+-- ============================================================
+if ApexEngine.Flags["lua_autoload"] then
+    local sel = ApexEngine.Flags["cfg_sel"]
+    if sel and sel ~= "" then
+        pcall(function() loadConfig(sel) end)
+    end
+end
 
 return ApexEngine
