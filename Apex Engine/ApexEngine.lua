@@ -1055,6 +1055,7 @@ a2:AddSlider({ Name = "Min damage", Min = 1, Max = 200, Default = 10, Flag = "rg
 a2:AddCheckbox({ Name = "Doubletap", Default = false, Flag = "rg_doubletap" })
 
 
+local SAGen = Ragebot:AddSubtab("Silent Aim")
 local sa1 = SAGen:AddGroup("Silent Aim", Icons.crosshairs, "Left")
 sa1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "sa_enabled" })
 sa1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 180, Suffix = "°", Flag = "sa_fov" })
