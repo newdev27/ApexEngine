@@ -47,6 +47,14 @@
       "created_at": 1794059514,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-LTMANY-VP2Q3F-QY": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794059567,
+      "expires_at": null,
+      "note": ""
     }
   }
 }
