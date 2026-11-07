@@ -1644,107 +1644,92 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 -- ============================================================
--- SILENT AIM
+-- SILENT AIM + AIMBOT RAYCAST HOOK (Rivals-specific)
 -- ============================================================
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local SharedModules = require(ReplicatedStorage.SharedModules.Global)
+local _saLoaded = false
+pcall(function()
+    local reps = game:GetService("ReplicatedStorage")
 
-local function wwguard(old, new)
-    return function(...)
-        local consts = debug.getconstants(2)
-        if table.find(consts, "StackSize") then return old(...) end
-        return new(...)
+    -- Rivals module refs
+    local U   = require(reps.Modules.Utility)
+    local EL  = require(reps.Modules.EnumLibrary)
+    local GU  = require(reps.Modules.GameplayUtility)
+    local cs  = game:GetService("CollectionService")
+
+    -- patch gun IsFullyAiming so shots always register as aimed
+    local ok, gun = pcall(require, LocalPlayer.PlayerScripts.Modules.ItemTypes.Gun)
+    if ok and gun and gun.IsFullyAiming then
+        gun.IsFullyAiming = function() return true end
     end
-end
 
-local function _solveTime(origin, speed, targetPos, gY_abs)
-    local toTarget = targetPos - origin
-    local toTargetXY = Vector3.new(toTarget.X, 0, toTarget.Z)
-    local distXY = toTargetXY.Magnitude
-    if speed <= 0.01 then return nil, nil end
-    local launch_dir = toTarget.Unit
-    local time_est = distXY / speed
-    for i = 1, 3 do
-        local compensated = targetPos + Vector3.new(0, 0.5 * gY_abs * (distXY/speed)^2, 0)
-        launch_dir = (compensated - origin).Unit
-        time_est = distXY / (speed * Vector3.new(launch_dir.X, 0, launch_dir.Z).Magnitude)
-        if time_est ~= time_est or time_est == math.huge then time_est = toTarget.Magnitude / speed end
+    -- target finder using CollectionService Entity tag (same as reference)
+    local function saTarget()
+        local center   = Camera.ViewportSize / 2
+        local fov      = ApexEngine.Flags["sa_fov"] or 180
+        local bestPart, bestDist = nil, fov
+        for _, entity in ipairs(cs:GetTagged("Entity")) do
+            if entity == LocalPlayer.Character then continue end
+            local hum = entity:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then continue end
+            local part = entity:FindFirstChild("Head", true)
+            if not part or not part:IsA("BasePart") then continue end
+            local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if not onScreen then continue end
+            local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+            if d < bestDist then bestDist = d; bestPart = part end
+        end
+        return bestPart
     end
-    return launch_dir, time_est
-end
 
-local function getSpreadVector(seed, fireDir, accuracyRad)
-    local Rnd = Random.new(seed)
-    local cone = CFrame.Angles(0,0,Rnd:NextNumber(0,2*math.pi)) * CFrame.Angles(math.acos(Rnd:NextNumber(math.cos(accuracyRad),1)),0,0)
-    return (CFrame.new(Vector3.new(), fireDir) * cone).LookVector
-end
+    -- build camdata table the same way the reference does
+    local function buildCamData(origin, part)
+        local cf = part.CFrame
+        local d  = {}
+        d[utf8.char(1)] = {
+            [utf8.char(0)] = U:EncodeCFrame(CFrame.lookAt(origin, part.Position)),
+            [utf8.char(1)] = U:EncodeCFrame(cf),
+            [utf8.char(2)] = part,
+            [utf8.char(3)] = U:EncodeCFrame(cf:ToObjectSpace(CFrame.new(part.Position))),
+        }
+        return d
+    end
 
-local markedBullets = {}
-
-local function forceHit(info)
-    task.wait(info.travelTime)
-    if not info.targetPart or not info.targetPart.Parent then markedBullets[info.bulletId]=nil; return end
-    local targetRef = SharedModules.Network:GetReference(Players:GetPlayerFromCharacter(info.targetModel) or info.targetModel, "CharacterPart")
-    if not targetRef then markedBullets[info.bulletId]=nil; return end
-    local objPos    = info.targetPart.CFrame:PointToObjectSpace(info.hitPos)
-    local objNormal = info.targetPart.CFrame:VectorToObjectSpace(-info.dir.Unit)
-    local objInc    = info.targetPart.CFrame:VectorToObjectSpace(info.dir.Unit)
-    SharedModules.Network:FireServer("ProjectileEvent", info.bulletId, SharedModules.SyncedTime:GetTime(), "Final",
-        targetRef, objPos, objNormal, objInc, info.hitPos, -info.dir.Unit, info.targetPart.Material.Name)
-    task.defer(SharedModules.Network.FireServer, SharedModules.Network, "RemoveProjectile", info.bulletId)
-    markedBullets[info.bulletId] = nil
-end
-
-local oldFireServer = SharedModules.Network.FireServer
-SharedModules.Network.FireServer = wwguard(oldFireServer, function(self_net, action, ...)
-    local args = table.pack(...)
-    if action == "InitProjectiles" and ApexEngine.Flags["sa_enabled"] then
-        local target = getAimTarget(ApexEngine.Flags["sa_fov"] or 180, "Head", true, false)
-        local projectileData = args[2]
-        if target and projectileData and type(projectileData) == "table" then
-            local gun = SharedModules.PlayerCharacter:GetEquippedItem()
-            local gs = gun and gun.SharedData
-            if gs then
-                local projSpeed = gs.ProjectilePower or 200
-                local gravY_abs = math.abs(((gs.Gravity and gs.Gravity.Y) or -64.348) * (gs.GravityMultiplier or 1))
-                if type(projectileData.power) == "number" and type(projectileData.drawStart) == "number" then
-                    local pct = math.min(projectileData.power, 1)
-                    projSpeed = (gs.MinPower or 50) + ((gs.MaxPower or 150) - (gs.MinPower or 50)) * pct
-                end
-                local dir, travelTime = _solveTime(projectileData.origin, projSpeed, target.Position, gravY_abs)
-                if dir and travelTime then
-                    local spreadRad = math.rad(12.5) * math.clamp(1 - (gs.ProjectileAccuracy or 1), 0, 1)
-                    projectileData.direction = getSpreadVector(projectileData.seed, dir, spreadRad)
-                    projectileData.accuracy = 1
-                    local bulletIds = args[3]
-                    oldFireServer(self_net, action, table.unpack(args, 1, args.n))
-                    if ApexEngine.Flags["sa_backtrack"] then
-                        local canHit = true
-                        if not ApexEngine.Flags["sa_wallbang"] then
-                            local params = RaycastParams.new()
-                            params.FilterDescendantsInstances = { LocalPlayer.Character }
-                            params.FilterType = Enum.RaycastFilterType.Exclude
-                            local dir3 = target.Position - Camera.CFrame.Position
-                            local hit = workspace:Raycast(Camera.CFrame.Position, dir3.Unit * dir3.Magnitude, params)
-                            canHit = not hit or target.Parent:IsAncestorOf(hit.Instance)
-                        end
-                        if canHit then
-                            for _, bid in ipairs(bulletIds) do
-                                markedBullets[bid] = true
-                                task.spawn(forceHit, { targetPart=target, targetModel=target.Parent,
-                                    hitPos=target.Position, dir=dir, bulletId=bid, travelTime=travelTime })
-                            end
-                        end
-                    end
-                    return
-                end
+    -- hook GetEntitiesFromRaycast to redirect ray toward target (aimbot)
+    local origRaycast = GU.GetEntitiesFromRaycast
+    GU.GetEntitiesFromRaycast = function(self, envID, params, origin, dir, maxDist, ...)
+        if ApexEngine.Flags["rg_enabled"] or ApexEngine.Flags["sa_enabled"] then
+            local t = saTarget()
+            if t then
+                local dist = (t.Position - origin).Magnitude
+                dir = (t.Position - origin).Unit
+                if dist > maxDist then maxDist = dist + 5 end
             end
         end
-    elseif (action == "ProjectileEvent" or action == "RemoveProjectile") and markedBullets[args[1]] then
-        return
+        return origRaycast(self, envID, params, origin, dir, maxDist, ...)
     end
-    return oldFireServer(self_net, action, table.unpack(args, 1, args.n))
+
+    -- hook UseItem.FireServer for silent aim camdata injection
+    local UseItem = reps.Remotes.Replication.Fighter.UseItem
+    local startShootingEnum = EL:ToEnum("StartShooting")
+    local saHook
+    saHook = hookfunction(UseItem.FireServer, newcclosure(function(self, objID, enumVal, camdata, extra)
+        if ApexEngine.Flags["sa_enabled"] and enumVal == startShootingEnum then
+            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local t    = saTarget()
+            if root and t then
+                camdata = buildCamData(root.Position, t)
+            end
+        end
+        return saHook(self, objID, enumVal, camdata, extra)
+    end))
+
+    _saLoaded = true
+    print("[ApexEngine] Silent Aim hooked via UseItem.FireServer")
 end)
+
+if not _saLoaded then
+    warn("[ApexEngine] Silent Aim failed to load - Rivals modules not found")
+end
 
 -- ============================================================
 -- CONFIG SYSTEM
