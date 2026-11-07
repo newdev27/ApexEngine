@@ -1,9 +1,3 @@
-
---[[
-    Apex Engine — Brisk Survival cheat
-    Designed and developed by Barlas (discord: 5nqs)
-]]
-
 if getgenv().apexengine_loaded then
     while task.wait(99999999) do end
 end
