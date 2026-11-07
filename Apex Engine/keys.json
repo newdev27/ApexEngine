@@ -55,6 +55,14 @@
       "created_at": 1794059567,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-LTH62V-9DSGDG-9N": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794092799,
+      "expires_at": null,
+      "note": ""
     }
   }
 }
