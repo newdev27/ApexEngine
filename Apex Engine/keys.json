@@ -34,7 +34,7 @@
     },
     "APEX-LTGPEB-5CG998-8B": {
       "hwid": "1518754397687910572",
-      "blocked": false,
+      "blocked": true,
       "tier": "lifetime",
       "created_at": 1794058917,
       "expires_at": null,
