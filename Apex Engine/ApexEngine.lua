@@ -473,7 +473,14 @@ function ApexEngine:CreateWindow(cfg)
         else licLbl.Text = tier end
     end
     updateLicLabel()
-    game:GetService("RunService").Heartbeat:Connect(updateLicLabel)
+    -- update license label every ~1s via Heartbeat throttle
+    local _licTick = 0
+    game:GetService("RunService").Heartbeat:Connect(function(dt)
+        _licTick += dt
+        if _licTick < 1 then return end
+        _licTick = 0
+        updateLicLabel()
+    end)
 
     local tabList = New("Frame", {
         Size = UDim2.fromOffset(150, 380), Position = UDim2.fromOffset(10, 70),
@@ -1009,7 +1016,6 @@ local Window = ApexEngine:CreateWindow({
 
 Window:AddCategory("Aimbot")
 local Ragebot  = Window:AddTab("Ragebot",  Icons.crosshairs)
-local AntiAim  = Window:AddTab("Anti-aim", Icons.ghost)
 local Legitbot = Window:AddTab("Legitbot", Icons.mouse)
 
 Window:AddCategory("Visuals")
@@ -1020,76 +1026,35 @@ Window:AddCategory("Miscellaneous")
 local MainTab = Window:AddTab("Main",    Icons.hammer)
 local Scripts = Window:AddTab("Scripts", Icons.code)
 
-local Modes  = { "Default", "Smooth", "Instant", "Adaptive", "Custom" }
-local Styles = { "Flat", "Gradient", "Outline", "Glow", "Shadow" }
-
 local RGen = Ragebot:AddSubtab("General")
 local RAdv = Ragebot:AddSubtab("Advanced")
-local RPre = Ragebot:AddSubtab("Presets")
 
-local g = RGen:AddGroup("Main", Icons.feather, "Left", 250)
+local g = RGen:AddGroup("Ragebot", Icons.feather, "Left", 220)
 g:AddCheckbox({ Name = "Enabled", Icon = Icons.dagger, Default = true, Flag = "rg_enabled" })
 g:AddKeybind({ Name = "Activation key", Default = Enum.KeyCode.E, Flag = "rg_key" })
-g:AddDropdown({ Name = "Mode", Items = Modes, Flag = "rg_mode" })
+g:AddCheckbox({ Name = "Hold to activate", Default = true, Flag = "rg_hold" })
 g:AddSlider({ Name = "Field of view", Min = 0, Max = 180, Default = 90, Suffix = "°", Flag = "rg_fov" })
 g:AddSlider({ Name = "Smoothness", Min = 0, Max = 100, Default = 35, Suffix = "%", Flag = "rg_smooth" })
-g:AddCheckbox({ Name = "Show indicator", Default = true, Flag = "rg_indicator" })
-g:AddColorPicker({ Name = "Indicator color", Default = Color3.fromRGB(0, 180, 255), Flag = "rg_indicator_col" })
+g:AddSlider({ Name = "Delay", Min = 0, Max = 500, Default = 50, Suffix = "ms", Flag = "rg_delay" })
 
-local g2 = RGen:AddGroup("Options", Icons.crown, "Right", 250)
-g2:AddCheckbox({ Name = "Auto toggle", Flag = "rg_auto" })
-g2:AddCheckbox({ Name = "Hold to use", Default = true, Flag = "rg_hold" })
+local g2 = RGen:AddGroup("Targeting", Icons.crown, "Right", 220)
 g2:AddCheckbox({ Name = "Ignore team", Flag = "rg_team" })
-g2:AddSeparator()
-g2:AddDropdown({ Name = "Priority", Items = { "Closest", "Lowest", "Random", "Crosshair" }, Flag = "rg_priority" })
-g2:AddSlider({ Name = "Delay", Min = 0, Max = 500, Default = 50, Suffix = "ms", Flag = "rg_delay" })
+g2:AddDropdown({ Name = "Priority", Items = { "Closest to crosshair", "Lowest HP", "Nearest", "Random" }, Default = "Closest to crosshair", Flag = "rg_priority" })
 g2:AddSlider({ Name = "Max distance", Min = 10, Max = 1000, Default = 300, Suffix = "m", Flag = "rg_dist" })
+g2:AddCheckbox({ Name = "Visible only", Default = true, Flag = "adv_visible" })
+g2:AddCheckbox({ Name = "Predict movement", Default = true, Flag = "adv_predict" })
+g2:AddSlider({ Name = "Jitter", Min = 0, Max = 100, Default = 10, Suffix = "%", Flag = "adv_random" })
 
-local g3 = RGen:AddGroup("Extras", Icons.axe_battle, "Left", 180)
-g3:AddCheckbox({ Name = "Notifications", Default = true, Flag = "rg_notify" })
-g3:AddCheckbox({ Name = "Sound on toggle", Flag = "rg_sound" })
-g3:AddDropdown({ Name = "Sound", Items = { "Click", "Pop", "Beep", "Ding" }, Flag = "rg_sound_type" })
-g3:AddSlider({ Name = "Volume", Min = 0, Max = 100, Default = 60, Suffix = "%", Flag = "rg_volume" })
+local a1 = RAdv:AddGroup("Hitbox", Icons.dagger, "Left")
+a1:AddDropdown({ Name = "Target bone", Items = { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart" }, Default = "Head", Flag = "rg_bone" })
+a1:AddCheckbox({ Name = "Multipoint", Default = false, Flag = "rg_multipoint" })
+a1:AddSlider({ Name = "Hitchance", Min = 1, Max = 100, Default = 100, Suffix = "%", Flag = "rg_hitchance" })
+local a2 = RAdv:AddGroup("Misc", Icons.code, "Right")
+a2:AddCheckbox({ Name = "Auto fire", Default = false, Flag = "rg_autofire" })
+a2:AddSlider({ Name = "Min damage", Min = 1, Max = 200, Default = 10, Flag = "rg_mindmg" })
+a2:AddCheckbox({ Name = "Doubletap", Default = false, Flag = "rg_doubletap" })
 
-local g4 = RGen:AddGroup("Profile", Icons.save, "Right", 180)
-g4:AddTextbox({ Name = "Profile name", Flag = "rg_profile" })
-g4:AddButton({ Name = "Save profile", Callback = function() print("profile saved") end })
-g4:AddButton({ Name = "Reset to default", Callback = function() print("profile reset") end })
 
-local a1 = RAdv:AddGroup("Timing", Icons.hammer, "Left")
-a1:AddSlider({ Name = "Update rate", Min = 1, Max = 240, Default = 60, Suffix = "hz", Flag = "adv_rate" })
-a1:AddSlider({ Name = "Randomization", Min = 0, Max = 100, Default = 10, Suffix = "%", Flag = "adv_random" })
-a1:AddCheckbox({ Name = "Predict movement", Flag = "adv_predict" })
-a1:AddCheckbox({ Name = "Limit per second", Flag = "adv_limit" })
-local a2 = RAdv:AddGroup("Behaviour", Icons.code, "Right")
-a2:AddDropdown({ Name = "Curve", Items = { "Linear", "Ease in", "Ease out", "Ease in-out" }, Flag = "adv_curve" })
-a2:AddCheckbox({ Name = "Only when visible", Default = true, Flag = "adv_visible" })
-a2:AddCheckbox({ Name = "Stop on release", Default = true, Flag = "adv_release" })
-
-local p1 = RPre:AddGroup("Presets", Icons.crown, "Left")
-p1:AddDropdown({ Name = "Preset", Items = { "Balanced", "Aggressive", "Safe", "Custom" }, Flag = "pre_preset" })
-p1:AddButton({ Name = "Load preset", Callback = function() print("preset loaded") end })
-
-local AAGen = AntiAim:AddSubtab("General")
-AntiAim:AddSubtab("Conditions")
-local b1 = AAGen:AddGroup("Base", Icons.baby, "Left", 220)
-b1:AddCheckbox({ Name = "Enabled", Flag = "aa_enabled" })
-b1:AddDropdown({ Name = "Pitch", Items = { "None", "Up", "Down", "Zero", "Random" }, Flag = "aa_pitch" })
-b1:AddDropdown({ Name = "Yaw base", Items = { "Local view", "At targets", "Static" }, Flag = "aa_yawbase" })
-b1:AddSlider({ Name = "Yaw offset", Min = -180, Max = 180, Default = 0, Suffix = "°", Flag = "aa_yaw" })
-b1:AddSlider({ Name = "Jitter", Min = 0, Max = 90, Default = 0, Suffix = "°", Flag = "aa_jitter" })
-local b2 = AAGen:AddGroup("Keys", Icons.ad, "Left", 176)
-b2:AddKeybind({ Name = "Manual left", Default = Enum.KeyCode.Z, Flag = "aa_left" })
-b2:AddKeybind({ Name = "Manual right", Default = Enum.KeyCode.C, Flag = "aa_right" })
-b2:AddKeybind({ Name = "Manual back", Default = Enum.KeyCode.X, Flag = "aa_back" })
-local b3 = AAGen:AddGroup("Advanced", nil, "Right")
-b3:AddCheckbox({ Name = "Freestanding", Flag = "aa_free" })
-b3:AddCheckbox({ Name = "Disable on use", Default = true, Flag = "aa_use" })
-b3:AddCheckbox({ Name = "Randomize body", Flag = "aa_body" })
-b3:AddSlider({ Name = "Body limit", Min = 0, Max = 60, Default = 58, Suffix = "°", Flag = "aa_bodylim" })
-b3:AddDropdown({ Name = "Fake mode", Items = { "Off", "Static", "Jitter", "Random" }, Flag = "aa_fake" })
-
-local SAGen = Ragebot:AddSubtab("Silent Aim")
 local sa1 = SAGen:AddGroup("Silent Aim", Icons.crosshairs, "Left")
 sa1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "sa_enabled" })
 sa1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 180, Suffix = "°", Flag = "sa_fov" })
@@ -1142,10 +1107,7 @@ w1:AddColorPicker({ Name = "Ambient color", Default = Color3.fromRGB(120, 120, 1
 w1:AddSlider({ Name = "Brightness", Min = 0, Max = 10, Default = 2, Flag = "w_bright" })
 w1:AddSlider({ Name = "Time of day", Min = 0, Max = 24, Default = 14, Suffix = "h", Flag = "w_time" })
 w1:AddCheckbox({ Name = "Remove fog", Flag = "w_fog" })
-local w2 = WGen:AddGroup("Sky", Icons.feather, "Right")
-w2:AddDropdown({ Name = "Skybox", Items = { "Default", "Night", "Sunset", "Space", "Clouds" }, Flag = "w_sky" })
-w2:AddColorPicker({ Name = "Sky tint", Default = Color3.fromRGB(255, 255, 255), Flag = "w_skytint" })
-w2:AddDropdown({ Name = "Effect style", Items = Styles, Flag = "w_style" })
+local w2 = WGen:AddGroup("Effects", Icons.feather, "Right")
 w2:AddCheckbox({ Name = "Bloom", Default = true, Flag = "w_bloom" })
 w2:AddSlider({ Name = "Bloom intensity", Min = 0, Max = 100, Default = 40, Suffix = "%", Flag = "w_bloom_int" })
 
@@ -1157,7 +1119,6 @@ m1:AddSlider({ Name = "Field of view", Min = 70, Max = 120, Default = 70, Suffix
 m1:AddKeybind({ Name = "Zoom key", Default = Enum.KeyCode.V, Flag = "m_zoom" })
 local m2 = MGen:AddGroup("Interface", Icons.code, "Right")
 m2:AddColorPicker({ Name = "Accent color", Default = Theme.Accent, Flag = "m_accent" })
-m2:AddDropdown({ Name = "Theme", Items = { "Dark", "Darker", "Midnight", "Ocean" }, Flag = "m_theme" })
 m2:AddCheckbox({ Name = "Watermark", Default = true, Flag = "m_watermark" })
 m2:AddCheckbox({ Name = "Keybind list", Default = true, Flag = "m_keybinds" })
 m2:AddSlider({ Name = "Menu scale", Min = 50, Max = 150, Default = 100, Suffix = "%", Flag = "m_scale" })
@@ -1181,24 +1142,18 @@ local GAME_NAME = IS_RIVALS and "Rivals" or "Universal"
 -- ============================================================
 Camera.FieldOfView = ApexEngine.Flags["m_camfov"] or 70
 
--- Bhop: use firesignal on Jump instead of writing hum.Jump directly
 local function safejump(hum)
     pcall(function()
-        if firesignal then
-            firesignal(hum.Jumping, true)
-        else
-            hum.Jump = true
-        end
+        if firesignal then firesignal(hum.Jumping, true) else hum.Jump = true end
     end)
 end
 
 UserInputService.JumpRequest:Connect(function()
-    if ApexEngine.Flags["m_bhop"] then
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if hum and hrp and hrp.Velocity.Y < 1 then safejump(hum) end
-    end
+    if not ApexEngine.Flags["m_bhop"] then return end
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and hrp and hrp.Velocity.Y < 1 then safejump(hum) end
 end)
 
 -- Auto Sprint: LinearVelocity (BodyVelocity is deprecated)
@@ -1231,84 +1186,77 @@ end
 
 local origFogEnd, origFogStart = Lighting.FogEnd, Lighting.FogStart
 local origBrightness = Lighting.Brightness
-local _espFrame = 0
-
-RunService.Heartbeat:Connect(function(dt)
-    _espFrame += 1
-    local char = LocalPlayer.Character
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-
-    Camera.FieldOfView = ApexEngine.Flags["m_camfov"] or 70
-
-    -- Bhop
-    if ApexEngine.Flags["m_bhop"] and hum and hrp and math.abs(hrp.Velocity.Y) < 1 then
-        safejump(hum)
-    end
-
-    -- Auto Sprint via LinearVelocity (avoids WalkSpeed write)
-    if ApexEngine.Flags["m_sprint"] and hrp then
-        setSprintLV(hrp, hum and hum.MoveDirection.Magnitude > 0)
-    elseif sprintLV then
-        setSprintLV(nil, false)
-    end
-
-    -- Fog
-    if ApexEngine.Flags["w_fog"] then
-        Lighting.FogEnd = 100000; Lighting.FogStart = 100000
-    else
-        Lighting.FogEnd = origFogEnd; Lighting.FogStart = origFogStart
-    end
-
-    -- Brightness
-    Lighting.Brightness = ApexEngine.Flags["w_bright"] or origBrightness
-
-    -- Ambient
-    if ApexEngine.Flags["w_ambient"] then
-        local c = ApexEngine.Flags["w_ambient_col"] or Color3.fromRGB(120,120,160)
-        Lighting.Ambient = c; Lighting.OutdoorAmbient = c
-    end
-
-    -- Time of day
-    if ApexEngine.Flags["w_time"] then
-        Lighting.ClockTime = ApexEngine.Flags["w_time"] or 14
-    end
-end)
 
 -- Bloom
 local bloomEffect = Lighting:FindFirstChildOfClass("BloomEffect")
-if not bloomEffect then
-    bloomEffect = Instance.new("BloomEffect", Lighting)
-end
-RunService.Heartbeat:Connect(function()
-    bloomEffect.Enabled   = ApexEngine.Flags["w_bloom"] ~= false
-    bloomEffect.Intensity = (ApexEngine.Flags["w_bloom_int"] or 40) / 100 * 2
-end)
+if not bloomEffect then bloomEffect = Instance.new("BloomEffect", Lighting) end
 
 -- Watermark
 local wmGui = Instance.new("ScreenGui", GetParentGui())
-wmGui.Name = "ApexWatermark"
-wmGui.ResetOnSpawn = false
+wmGui.Name = "ApexWatermark"; wmGui.ResetOnSpawn = false
 wmGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 local wmFrame = New("Frame", {
     Size = UDim2.fromOffset(200, 24), Position = UDim2.fromOffset(8, 8),
     BackgroundColor3 = Theme.WindowBg, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = wmGui,
 }, { Corner(4), Stroke() })
-local wmLabel = Label({ Text = "APEX ENGINE  |  " .. GAME_NAME, Font = Theme.FontBold, TextSize = 12,
+Label({ Text = "APEX ENGINE  |  " .. GAME_NAME, Font = Theme.FontBold, TextSize = 12,
     TextColor3 = Theme.Accent, Size = UDim2.fromScale(1,1), TextXAlignment = Enum.TextXAlignment.Center, Parent = wmFrame })
-RunService.Heartbeat:Connect(function()
-    wmFrame.Visible = ApexEngine.Flags["m_watermark"] ~= false
-end)
 
--- Live accent color
-RunService.Heartbeat:Connect(function()
-    local c = ApexEngine.Flags["m_accent"]
+-- Single merged Heartbeat loop (replaces 5 separate ones)
+local _hbThrottle = 0
+RunService.Heartbeat:Connect(function(dt)
+    local flags = ApexEngine.Flags
+    local char  = LocalPlayer.Character
+    local hum   = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp   = char and char:FindFirstChild("HumanoidRootPart")
+
+    Camera.FieldOfView = flags["m_camfov"] or 70
+
+    -- Bhop (JumpRequest handles it; this is a fallback for held-jump)
+    if flags["m_bhop"] and hum and hrp and hum.FloorMaterial ~= Enum.Material.Air and hrp.Velocity.Y < 1 then
+        safejump(hum)
+    end
+
+    -- Auto Sprint
+    if flags["m_sprint"] and hrp then
+        setSprintLV(hrp, hum and hum.MoveDirection.Magnitude > 0)
+    elseif sprintLV then
+        setSprintLV(nil, false)
+    end
+
+    -- Throttle low-priority updates to every 6 frames (~10hz)
+    _hbThrottle += 1
+    if _hbThrottle < 6 then return end
+    _hbThrottle = 0
+
+    -- Fog
+    if flags["w_fog"] then
+        Lighting.FogEnd = 100000; Lighting.FogStart = 100000
+    else
+        Lighting.FogEnd = origFogEnd; Lighting.FogStart = origFogStart
+    end
+
+    -- Brightness / Ambient / Time
+    Lighting.Brightness = flags["w_bright"] or origBrightness
+    if flags["w_ambient"] then
+        local c = flags["w_ambient_col"] or Color3.fromRGB(120,120,160)
+        Lighting.Ambient = c; Lighting.OutdoorAmbient = c
+    end
+    if flags["w_time"] then Lighting.ClockTime = flags["w_time"] or 14 end
+
+    -- Bloom
+    bloomEffect.Enabled   = flags["w_bloom"] ~= false
+    bloomEffect.Intensity = (flags["w_bloom_int"] or 40) / 100 * 2
+
+    -- Watermark
+    wmFrame.Visible = flags["m_watermark"] ~= false
+
+    -- Live accent color
+    local c = flags["m_accent"]
     if c then Theme.Accent = c end
-end)
 
--- Menu scale
-RunService.Heartbeat:Connect(function()
-    local s = (ApexEngine.Flags["m_scale"] or 100) / 100
+    -- Menu scale
+    local s = (flags["m_scale"] or 100) / 100
     Window.Main.Size = UDim2.fromOffset(math.floor(690 * s), math.floor(500 * s))
 end)
 -- ============================================================
@@ -1555,44 +1503,46 @@ lgCircle.Thickness = 1; lgCircle.Color = Color3.new(1,1,1); lgCircle.NumSides = 
 
 local lgHoldActive = false
 local lgReactTimer = 0
-local lgFired = false
 
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
-        lgHoldActive = true; lgReactTimer = 0; lgFired = false
+        lgHoldActive = true; lgReactTimer = 0
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
     if ApexEngine.Flags["lg_key"] and i.KeyCode == ApexEngine.Flags["lg_key"] then
-        lgHoldActive = false; lgFired = false
+        lgHoldActive = false
     end
 end)
 
 RunService.Heartbeat:Connect(function(dt)
+    local flags     = ApexEngine.Flags
     local vpCenter  = Camera.ViewportSize / 2
-    local fovRadius = ApexEngine.Flags["lg_fov"] or 90
+    local fovRadius = flags["lg_fov"] or 90
+    local lgEnabled = flags["lg_enabled"]
 
-    lgCircle.Visible   = ApexEngine.Flags["lg_circle"] ~= false
-    lgCircle.Radius    = fovRadius
-    lgCircle.Position  = vpCenter
-    lgCircle.Color     = ApexEngine.Flags["lg_circle_col"] or Color3.new(1,1,1)
-    lgCircle.Thickness = ApexEngine.Flags["lg_thick"] or 1
-    lgCircle.Filled    = ApexEngine.Flags["lg_filled"] or false
+    lgCircle.Visible   = lgEnabled and flags["lg_circle"] ~= false or false
+    if lgCircle.Visible then
+        lgCircle.Radius    = fovRadius
+        lgCircle.Position  = vpCenter
+        lgCircle.Color     = flags["lg_circle_col"] or Color3.new(1,1,1)
+        lgCircle.Thickness = flags["lg_thick"] or 1
+        lgCircle.Filled    = flags["lg_filled"] or false
+    end
 
-    if not ApexEngine.Flags["lg_enabled"] or not lgHoldActive then return end
+    if not lgEnabled or not lgHoldActive then return end
 
     lgReactTimer += dt
-    if lgReactTimer < (ApexEngine.Flags["lg_react"] or 120) / 1000 then return end
-    lgFired = true
+    if lgReactTimer < (flags["lg_react"] or 120) / 1000 then return end
 
-    local target = getAimTarget(fovRadius, ApexEngine.Flags["lg_part"] or "Head", true, true)
+    local target = getAimTarget(fovRadius, flags["lg_part"] or "Head", true, true)
     if not target then return end
 
     local predPos  = predictPos(target, dt * 2)
     local sp       = Camera:WorldToViewportPoint(predPos)
-    local delta    = (Vector2.new(sp.X, sp.Y) - vpCenter)
-    local strength = (ApexEngine.Flags["lg_strength"] or 25) / 100
-    local smooth   = math.max(ApexEngine.Flags["lg_smooth"] or 10, 1)
+    local delta    = Vector2.new(sp.X, sp.Y) - vpCenter
+    local strength = (flags["lg_strength"] or 25) / 100
+    local smooth   = math.max(flags["lg_smooth"] or 10, 1)
     mousemoverel(delta.X * strength / smooth, delta.Y * strength / smooth)
 end)
 
@@ -1614,7 +1564,7 @@ end)
 local rgDelayTimer = 0
 RunService.Heartbeat:Connect(function(dt)
     if not ApexEngine.Flags["rg_enabled"] then return end
-    if not rgHoldActive then return end
+    if ApexEngine.Flags["rg_hold"] ~= false and not rgHoldActive then return end
 
     rgDelayTimer += dt
     local delaySec = (ApexEngine.Flags["rg_delay"] or 50) / 1000
@@ -1808,9 +1758,8 @@ s1:AddButton({ Name = "Delete", Callback = function()
     deleteConfig(ApexEngine.Flags["cfg_sel"])
     cfgDropdown:Refresh(listConfigs())
 end })
-local s2 = SGen:AddGroup("Lua", Icons.code, "Right")
-s2:AddCheckbox({ Name = "Allow scripts", Flag = "lua_allow" })
-s2:AddCheckbox({ Name = "Auto load", Flag = "lua_autoload" })
+local s2 = SGen:AddGroup("Startup", Icons.code, "Right")
+s2:AddCheckbox({ Name = "Auto load config", Flag = "lua_autoload" })
 s2:AddButton({ Name = "Reload scripts", Callback = function() print("scripts reloaded") end })
 
 -- ============================================================
@@ -1826,9 +1775,7 @@ local function cleanupSprint()
         sprintLV = nil
     end)
 end
-LocalPlayer.CharacterAdded:Connect(function(char)
-    cleanupSprint()
-end)
+LocalPlayer.CharacterAdded:Connect(cleanupSprint)
 
 -- ============================================================
 -- KEYBIND LIST
@@ -1856,12 +1803,9 @@ New("UIListLayout", {
 
 local kbEntries = {}
 local KB_WATCH = {
-    { flag = "lg_key",  label = "Legitbot" },
-    { flag = "rg_key",  label = "Ragebot"  },
-    { flag = "m_zoom",  label = "Zoom"     },
-    { flag = "aa_left", label = "AA Left"  },
-    { flag = "aa_right",label = "AA Right" },
-    { flag = "aa_back", label = "AA Back"  },
+    { flag = "lg_key", label = "Legitbot" },
+    { flag = "rg_key", label = "Ragebot"  },
+    { flag = "m_zoom", label = "Zoom"     },
 }
 
 for i, kb in ipairs(KB_WATCH) do
@@ -1879,7 +1823,11 @@ for i, kb in ipairs(KB_WATCH) do
     kbEntries[kb.flag] = valLbl
 end
 
-RunService.Heartbeat:Connect(function()
+local _kbThrottle = 0
+RunService.Heartbeat:Connect(function(dt)
+    _kbThrottle += dt
+    if _kbThrottle < 0.1 then return end
+    _kbThrottle = 0
     local show = ApexEngine.Flags["m_keybinds"] ~= false
     kbGui.Enabled = show
     if not show then return end
