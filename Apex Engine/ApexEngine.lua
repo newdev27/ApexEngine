@@ -1124,9 +1124,7 @@ w2:AddCheckbox({ Name = "Bloom", Default = true, Flag = "w_bloom" })
 w2:AddSlider({ Name = "Bloom intensity", Min = 0, Max = 100, Default = 40, Suffix = "%", Flag = "w_bloom_int" })
 
 local MGen = MainTab:AddSubtab("General")
-local m1 = MGen:AddGroup("Movement", Icons.hammer, "Left")
-m1:AddCheckbox({ Name = "Auto jump", Flag = "m_bhop" })
-m1:AddCheckbox({ Name = "Auto sprint", Flag = "m_sprint" })
+local m1 = MGen:AddGroup("Settings", Icons.hammer, "Left")
 m1:AddSlider({ Name = "Field of view", Min = 70, Max = 120, Default = 70, Suffix = "°", Flag = "m_camfov" })
 m1:AddKeybind({ Name = "Zoom key", Default = Enum.KeyCode.V, Flag = "m_zoom" })
 local m2 = MGen:AddGroup("Interface", Icons.code, "Right")
@@ -1175,33 +1173,6 @@ UserInputService.JumpRequest:Connect(function()
     if hum and hrp and hrp.Velocity.Y < 1 then safejump(hum) end
 end)
 
--- Auto Sprint: LinearVelocity (BodyVelocity is deprecated)
-local sprintLV = nil
-local function setSprintLV(hrp, active)
-    pcall(function()
-        if active then
-            if not sprintLV or not sprintLV.Parent then
-                local att = Instance.new("Attachment", hrp)
-                sprintLV = Instance.new("LinearVelocity")
-                sprintLV.Attachment0 = att
-                sprintLV.MaxForce = 1e4
-                sprintLV.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-                sprintLV.RelativeTo = Enum.ActuatorRelativeTo.World
-                sprintLV.Parent = hrp
-            end
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            local dir = hum and hum.MoveDirection or Vector3.zero
-            sprintLV.VectorVelocity = Vector3.new(dir.X * 24, hrp.AssemblyLinearVelocity.Y, dir.Z * 24)
-        else
-            if sprintLV and sprintLV.Parent then
-                local att = sprintLV.Attachment0
-                sprintLV:Destroy()
-                if att then att:Destroy() end
-            end
-            sprintLV = nil
-        end
-    end)
-end
 
 local origFogEnd, origFogStart = Lighting.FogEnd, Lighting.FogStart
 local origBrightness = Lighting.Brightness
@@ -1230,18 +1201,6 @@ RunService.Heartbeat:Connect(function(dt)
     local hrp   = char and char:FindFirstChild("HumanoidRootPart")
 
     Camera.FieldOfView = flags["m_camfov"] or 70
-
-    -- Bhop (JumpRequest handles it; this is a fallback for held-jump)
-    if flags["m_bhop"] and hum and hrp and hum.FloorMaterial ~= Enum.Material.Air and hrp.Velocity.Y < 1 then
-        safejump(hum)
-    end
-
-    -- Auto Sprint
-    if flags["m_sprint"] and hrp then
-        setSprintLV(hrp, hum and hum.MoveDirection.Magnitude > 0)
-    elseif sprintLV then
-        setSprintLV(nil, false)
-    end
 
     -- Throttle low-priority updates to every 6 frames (~10hz)
     _hbThrottle += 1
@@ -1686,9 +1645,9 @@ RunService.Heartbeat:Connect(function(dt)
         if lgReactTimer >= (flags["lg_react"] or 120) / 1000 then
             local predPos = predictPos(target, dt * 2)
             local smooth  = math.max(flags["lg_smooth"] or 10, 1)
-            -- rotate camera CFrame toward target; smooth=1 snaps instantly
-            local targetCF = CFrame.lookAt(Camera.CFrame.Position, predPos)
-            Camera.CFrame  = Camera.CFrame:Lerp(targetCF, 1 / smooth)
+            local sp      = Camera:WorldToViewportPoint(predPos)
+            local delta   = Vector2.new(sp.X, sp.Y) - vpCenter
+            mousemoverel(delta.X / smooth, delta.Y / smooth)
         end
     elseif not lgActive then
         lgReactTimer = 0
@@ -1917,20 +1876,7 @@ local s2 = SGen:AddGroup("Startup", Icons.code, "Right")
 s2:AddCheckbox({ Name = "Auto load config", Flag = "lua_autoload" })
 s2:AddButton({ Name = "Reload scripts", Callback = function() print("scripts reloaded") end })
 
--- ============================================================
--- SPRINT CLEANUP ON RESPAWN
--- ============================================================
-local function cleanupSprint()
-    pcall(function()
-        if sprintLV and sprintLV.Parent then
-            local att = sprintLV.Attachment0
-            sprintLV:Destroy()
-            if att then att:Destroy() end
-        end
-        sprintLV = nil
-    end)
-end
-LocalPlayer.CharacterAdded:Connect(cleanupSprint)
+
 
 -- ============================================================
 -- KEYBIND LIST
