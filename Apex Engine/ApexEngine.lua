@@ -1091,8 +1091,6 @@ tb1:AddSlider({ Name = "Fire cooldown", Min = 50, Max = 2000, Default = 200, Suf
 tb1:AddCheckbox({ Name = "Visible only", Default = true, Flag = "tb_vis" })
 
 local PGen = PlayersTab:AddSubtab("Enemies")
-PlayersTab:AddSubtab("Teammates")
-PlayersTab:AddSubtab("Local")
 local v1 = PGen:AddGroup("Boxes", Icons.user, "Left", 230)
 v1:AddCheckbox({ Name = "Box", Default = true, Flag = "pl_box" })
 v1:AddColorPicker({ Name = "Box color", Default = Color3.fromRGB(255, 255, 255), Flag = "pl_box_col" })
@@ -1136,7 +1134,9 @@ m2:AddColorPicker({ Name = "Accent color", Default = Theme.Accent, Flag = "m_acc
 m2:AddCheckbox({ Name = "Watermark", Default = true, Flag = "m_watermark" })
 m2:AddCheckbox({ Name = "Keybind list", Default = true, Flag = "m_keybinds" })
 m2:AddSlider({ Name = "Menu scale", Min = 50, Max = 150, Default = 100, Suffix = "%", Flag = "m_scale" })
-m2:AddLabel("Menu key: Insert")
+m2:AddKeybind({ Name = "Hide key", Default = Enum.KeyCode.Insert, Flag = "m_menukey", Callback = function(key)
+    ApexEngine.ToggleKey = key
+end })
 
 -- ============================================================
 -- GAME LOGIC (only runs after auth)
@@ -1145,9 +1145,14 @@ StartGameLogic = function()
 local RunService = game:GetService("RunService")
 local Camera     = workspace.CurrentCamera
 
+-- sync hide key from flag (in case config was loaded before StartGameLogic)
+if ApexEngine.Flags["m_menukey"] then
+    ApexEngine.ToggleKey = ApexEngine.Flags["m_menukey"]
+end
+
 math.randomseed(tick())
 
-local RIVALS_PLACE_ID = 317625359962
+local RIVALS_PLACE_ID = 17017769292
 local IS_RIVALS = game.PlaceId == RIVALS_PLACE_ID
 local GAME_NAME = IS_RIVALS and "Rivals" or "Universal"
 
