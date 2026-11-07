@@ -18,7 +18,7 @@
     },
     "APEX-LTSEUH-25MXBS-PU": {
       "hwid": "1328060333444563071",
-      "blocked": false,
+      "blocked": true,
       "tier": "lifetime",
       "created_at": 1794058706,
       "expires_at": null,
