@@ -1076,6 +1076,15 @@ l2:AddColorPicker({ Name = "Circle color", Default = Color3.fromRGB(255, 255, 25
 l2:AddSlider({ Name = "Thickness", Min = 1, Max = 5, Default = 1, Flag = "lg_thick" })
 l2:AddCheckbox({ Name = "Filled", Flag = "lg_filled" })
 
+local TBGen = Legitbot:AddSubtab("Triggerbot")
+local tb1 = TBGen:AddGroup("Triggerbot", Icons.dagger, "Left")
+tb1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "tb_enabled" })
+tb1:AddDropdown({ Name = "Target part", Items = { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart" }, Default = "Head", Flag = "tb_part" })
+tb1:AddSlider({ Name = "FOV", Min = 1, Max = 60, Default = 15, Suffix = "px", Flag = "tb_fov" })
+tb1:AddSlider({ Name = "Reaction delay", Min = 0, Max = 500, Default = 50, Suffix = "ms", Flag = "tb_delay" })
+tb1:AddSlider({ Name = "Fire cooldown", Min = 50, Max = 2000, Default = 200, Suffix = "ms", Flag = "tb_cooldown" })
+tb1:AddCheckbox({ Name = "Visible only", Default = true, Flag = "tb_vis" })
+
 local PGen = PlayersTab:AddSubtab("Enemies")
 PlayersTab:AddSubtab("Teammates")
 PlayersTab:AddSubtab("Local")
@@ -1451,6 +1460,14 @@ end
 -- ============================================================
 -- AIMBOT SHARED
 -- ============================================================
+local _rayParams = RaycastParams.new()
+_rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- Per-frame target cache: both ragebot and legitbot read from this
+-- so they always lock the same enemy and don't fight each other
+local _cachedTarget = nil  -- { part, char, screenDist }
+local _cacheFrame   = -1
+
 local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
     local vpCenter = Camera.ViewportSize / 2
     local camPos   = Camera.CFrame.Position
@@ -1473,12 +1490,9 @@ local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
         if screenDist >= bestDist then continue end
 
         if visCheck then
-            local dir = part.Position - camPos
-            local params = RaycastParams.new()
-            params.FilterDescendantsInstances = { LocalPlayer.Character }
-            params.FilterType = Enum.RaycastFilterType.Exclude
-            local hit = workspace:Raycast(camPos, dir.Unit * dir.Magnitude, params)
-            if hit and not char:IsAncestorOf(hit.Instance) and hit.Instance ~= part then continue end
+            _rayParams.FilterDescendantsInstances = { LocalPlayer.Character, char }
+            local hit = workspace:Raycast(camPos, part.Position - camPos, _rayParams)
+            if hit then continue end
         end
 
         bestDist = screenDist
@@ -1488,10 +1502,34 @@ local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
     return bestPart, bestChar
 end
 
+-- Returns the shared per-frame target, recomputing only once per frame.
+-- partName/visCheck come from whichever system calls first; subsequent
+-- callers in the same frame reuse the result.
+local _frameCount = 0
+local function getSharedTarget(fovRadius, partName, visCheck)
+    if _cacheFrame == _frameCount then
+        -- reuse cached result but re-check fov for the caller's radius
+        if _cachedTarget and _cachedTarget.screenDist <= fovRadius then
+            return _cachedTarget.part, _cachedTarget.char
+        end
+        return nil, nil
+    end
+    _cacheFrame = _frameCount
+    local part, char = getAimTarget(fovRadius, partName, true, visCheck)
+    if part then
+        local sp = Camera:WorldToViewportPoint(part.Position)
+        local sd = (Vector2.new(sp.X, sp.Y) - Camera.ViewportSize/2).Magnitude
+        _cachedTarget = { part = part, char = char, screenDist = sd }
+    else
+        _cachedTarget = nil
+    end
+    return part, char
+end
+
 local function predictPos(part, dt)
     local hrp = part.Parent and part.Parent:FindFirstChild("HumanoidRootPart")
     if not hrp then return part.Position end
-    return part.Position + hrp.AssemblyLinearVelocity * dt
+    return part.Position + hrp.Velocity * dt
 end
 
 -- ============================================================
@@ -1515,37 +1553,6 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
-RunService.Heartbeat:Connect(function(dt)
-    local flags     = ApexEngine.Flags
-    local vpCenter  = Camera.ViewportSize / 2
-    local fovRadius = flags["lg_fov"] or 90
-    local lgEnabled = flags["lg_enabled"]
-
-    lgCircle.Visible   = lgEnabled and flags["lg_circle"] ~= false or false
-    if lgCircle.Visible then
-        lgCircle.Radius    = fovRadius
-        lgCircle.Position  = vpCenter
-        lgCircle.Color     = flags["lg_circle_col"] or Color3.new(1,1,1)
-        lgCircle.Thickness = flags["lg_thick"] or 1
-        lgCircle.Filled    = flags["lg_filled"] or false
-    end
-
-    if not lgEnabled or not lgHoldActive then return end
-
-    lgReactTimer += dt
-    if lgReactTimer < (flags["lg_react"] or 120) / 1000 then return end
-
-    local target = getAimTarget(fovRadius, flags["lg_part"] or "Head", true, true)
-    if not target then return end
-
-    local predPos  = predictPos(target, dt * 2)
-    local sp       = Camera:WorldToViewportPoint(predPos)
-    local delta    = Vector2.new(sp.X, sp.Y) - vpCenter
-    local strength = (flags["lg_strength"] or 25) / 100
-    local smooth   = math.max(flags["lg_smooth"] or 10, 1)
-    mousemoverel(delta.X * strength / smooth, delta.Y * strength / smooth)
-end)
-
 -- ============================================================
 -- RAGEBOT
 -- ============================================================
@@ -1561,36 +1568,116 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
+-- ============================================================
+-- TRIGGERBOT
+-- ============================================================
+local tbCooldown = 0
+local tbWasOver  = false
+
+-- ============================================================
+-- UNIFIED AIMBOT LOOP (Ragebot + Legitbot + Triggerbot in one pass)
+-- ============================================================
 local rgDelayTimer = 0
+
 RunService.Heartbeat:Connect(function(dt)
-    if not ApexEngine.Flags["rg_enabled"] then return end
-    if ApexEngine.Flags["rg_hold"] ~= false and not rgHoldActive then return end
+    _frameCount += 1
+    local flags     = ApexEngine.Flags
+    local vpCenter  = Camera.ViewportSize / 2
 
-    rgDelayTimer += dt
-    local delaySec = (ApexEngine.Flags["rg_delay"] or 50) / 1000
-    if rgDelayTimer < delaySec then return end
-    rgDelayTimer = 0
+    -- ── Legitbot FOV circle (always update when enabled) ──
+    local lgEnabled = flags["lg_enabled"]
+    local fovRadius = flags["lg_fov"] or 90
+    lgCircle.Visible = lgEnabled and flags["lg_circle"] ~= false or false
+    if lgCircle.Visible then
+        lgCircle.Radius    = fovRadius
+        lgCircle.Position  = vpCenter
+        lgCircle.Color     = flags["lg_circle_col"] or Color3.new(1,1,1)
+        lgCircle.Thickness = flags["lg_thick"] or 1
+        lgCircle.Filled    = flags["lg_filled"] or false
+    end
 
-    local fov      = ApexEngine.Flags["rg_fov"] or 90
-    local partName = "Head"
-    local skipTeam = true
-    local target, tchar = getAimTarget(fov, partName, skipTeam, ApexEngine.Flags["adv_visible"] ~= false)
-    if not target then return end
+    -- ── Determine which systems are active this frame ──
+    local rgActive = flags["rg_enabled"] and (flags["rg_hold"] == false or rgHoldActive)
+    local lgActive = lgEnabled and lgHoldActive
+    local tbActive = flags["tb_enabled"]
 
-    local maxDist = ApexEngine.Flags["rg_dist"] or 300
-    local hrp = tchar and tchar:FindFirstChild("HumanoidRootPart")
-    if hrp and (Camera.CFrame.Position - hrp.Position).Magnitude > maxDist then return end
+    if not rgActive and not lgActive and not tbActive then
+        rgDelayTimer = 0
+        return
+    end
 
-    local smooth = math.max(ApexEngine.Flags["rg_smooth"] or 0, 1)
-    local predPos = predictPos(target, 0.05)
-    local sp = Camera:WorldToViewportPoint(predPos)
-    local vpCenter = Camera.ViewportSize / 2
-    local delta = Vector2.new(sp.X, sp.Y) - vpCenter
-    -- Jitter: randomize by adv_random % to avoid bot pattern detection
-    local jitterPct = (ApexEngine.Flags["adv_random"] or 10) / 100
-    local jx = (math.random() - 0.5) * 2 * jitterPct * delta.X
-    local jy = (math.random() - 0.5) * 2 * jitterPct * delta.Y
-    mousemoverel((delta.X + jx) / smooth, (delta.Y + jy) / smooth)
+    -- ── Pick the best part name (ragebot takes priority if both active) ──
+    local partName = rgActive and (flags["rg_bone"] or "Head") or (flags["lg_part"] or "Head")
+    local visCheck = rgActive and (flags["adv_visible"] ~= false) or true
+    local fovLimit = rgActive and (flags["rg_fov"] or 90) or fovRadius
+
+    -- ── Shared target lookup (cached per frame) ──
+    local target, tchar = getSharedTarget(fovLimit, partName, visCheck)
+
+    -- ── RAGEBOT ──
+    if rgActive then
+        rgDelayTimer += dt
+        local delaySec = (flags["rg_delay"] or 50) / 1000
+        if rgDelayTimer >= delaySec and target then
+            local maxDist = flags["rg_dist"] or 300
+            local hrp = tchar and tchar:FindFirstChild("HumanoidRootPart")
+            if not hrp or (Camera.CFrame.Position - hrp.Position).Magnitude <= maxDist then
+                rgDelayTimer = 0
+                local smooth = math.max(flags["rg_smooth"] or 1, 1)
+                local predPos = predictPos(target, 1/60)
+                local sp = Camera:WorldToViewportPoint(predPos)
+                local delta = Vector2.new(sp.X, sp.Y) - vpCenter
+                local jPct = (flags["adv_random"] or 0) / 100
+                local jx = (math.random() - 0.5) * 2 * jPct * delta.X
+                local jy = (math.random() - 0.5) * 2 * jPct * delta.Y
+                mousemoverel((delta.X + jx) / smooth, (delta.Y + jy) / smooth)
+            end
+        elseif not target then
+            rgDelayTimer = 0
+        end
+    else
+        rgDelayTimer = 0
+    end
+
+    -- ── LEGITBOT ──
+    if lgActive and target then
+        lgReactTimer += dt
+        if lgReactTimer >= (flags["lg_react"] or 120) / 1000 then
+            local predPos  = predictPos(target, dt * 2)
+            local sp       = Camera:WorldToViewportPoint(predPos)
+            local delta    = Vector2.new(sp.X, sp.Y) - vpCenter
+            local strength = (flags["lg_strength"] or 25) / 100
+            local smooth   = math.max(flags["lg_smooth"] or 10, 1)
+            mousemoverel(delta.X * strength / smooth, delta.Y * strength / smooth)
+        end
+    elseif not lgActive then
+        lgReactTimer = 0
+    end
+
+    -- ── TRIGGERBOT ──
+    if tbActive then
+        tbCooldown = math.max(0, tbCooldown - dt)
+        -- check if crosshair is directly over an enemy (tight FOV check)
+        local tbFov = flags["tb_fov"] or 15
+        local tbTarget = getAimTarget(tbFov, flags["tb_part"] or "Head", true, flags["tb_vis"] ~= false)
+        local isOver = tbTarget ~= nil
+        if isOver and not tbWasOver then
+            -- just entered target — apply reaction delay
+            tbWasOver = true
+        end
+        if isOver and tbWasOver and tbCooldown <= 0 then
+            local delay = (flags["tb_delay"] or 50) / 1000
+            task.delay(delay, function()
+                if not ApexEngine.Flags["tb_enabled"] then return end
+                -- simulate left click
+                mouse1press()
+                task.wait(0.05)
+                mouse1release()
+            end)
+            tbCooldown = (flags["tb_cooldown"] or 200) / 1000
+        end
+        if not isOver then tbWasOver = false end
+    end
 end)
 
 -- ============================================================
