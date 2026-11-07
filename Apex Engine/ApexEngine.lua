@@ -311,20 +311,21 @@ end
 -- Shared input routing to avoid per-widget UIS connections
 local _sliders = {}
 local _colorModes = {}
-UserInputService.InputChanged:Connect(function(i)
+-- FIX: track these top-level connections so Destroy() cleans them up
+trackConnection(UserInputService.InputChanged:Connect(function(i)
     local t = i.UserInputType
     if t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch then
         for _, fn in ipairs(_sliders) do fn(i.Position.X) end
         for _, fn in ipairs(_colorModes) do fn(i.Position) end
     end
-end)
-UserInputService.InputEnded:Connect(function(i)
+end))
+trackConnection(UserInputService.InputEnded:Connect(function(i)
     local t = i.UserInputType
     if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
         for _, fn in ipairs(_sliders) do fn(nil) end
         for _, fn in ipairs(_colorModes) do fn(nil) end
     end
-end)
+end))
 
 -- ============================================================
 -- DISCORD JOIN HELPER (NeverLose-style)
@@ -546,14 +547,7 @@ function ApexEngine:CreateWindow(cfg)
             Tween(keyBox, 0.12, { BackgroundColor3 = Color3.fromRGB(14, 14, 20) })
             Tween(kbStroke, 0.12, { Color = Theme.Accent, Transparency = 0.30 })
         end)
-        keyBox.FocusLost:Connect(function(enter)
-            Tween(keyBox, 0.12, { BackgroundColor3 = Color3.fromRGB(10, 10, 14) })
-            Tween(kbStroke, 0.12, { Color = Theme.Border, Transparency = 0.70 })
-            if enter then
-                -- Enter key submits
-                task.spawn(function() trySubmit() end)
-            end
-        end)
+        -- NOTE: FocusLost wired AFTER trySubmit is defined below
 
         -- Buttons row
         local submitBtn = New("TextButton", {
@@ -635,6 +629,7 @@ function ApexEngine:CreateWindow(cfg)
                 local ok, msg, entry = KeySystem:Validate(key)
                 if ok then
                     authed = true
+                    submitting = false  -- FIX: reset so re-entry is possible
                     if entry then
                         cfg.Tier      = entry.tier
                         cfg.ExpiresAt = entry.expires_at
@@ -657,6 +652,13 @@ function ApexEngine:CreateWindow(cfg)
                 end
             end)
         end
+
+        -- FIX: wire FocusLost AFTER trySubmit is defined so the upvalue resolves
+        keyBox.FocusLost:Connect(function(enter)
+            Tween(keyBox, 0.12, { BackgroundColor3 = Color3.fromRGB(10, 10, 14) })
+            Tween(kbStroke, 0.12, { Color = Theme.Border, Transparency = 0.70 })
+            if enter then task.spawn(trySubmit) end
+        end)
 
         submitBtn.Activated:Connect(trySubmit)
         getKeyBtn.Activated:Connect(function()
@@ -780,14 +782,14 @@ function ApexEngine:CreateWindow(cfg)
         else licLbl.Text = tier end
     end
     updateLicLabel()
-    -- update license label every ~1s via Heartbeat throttle
+    -- FIX: track connection so it stops firing after Window:Destroy()
     local _licTick = 0
-    game:GetService("RunService").Heartbeat:Connect(function(dt)
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
         _licTick += dt
         if _licTick < 1 then return end
         _licTick = 0
         updateLicLabel()
-    end)
+    end))
 
     local tabList = New("Frame", {
         Size = UDim2.fromOffset(150, 380), Position = UDim2.fromOffset(10, 70),
@@ -835,20 +837,22 @@ function ApexEngine:CreateWindow(cfg)
         end
         dragArea.InputBegan:Connect(begin)
         topbar.InputBegan:Connect(begin)
-        UserInputService.InputChanged:Connect(function(input)
+        -- FIX: track drag connection
+        trackConnection(UserInputService.InputChanged:Connect(function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 local d = input.Position - dragStart
                 main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
             end
-        end)
+        end))
     end
 
-    UserInputService.InputBegan:Connect(function(input, gp)
+    -- FIX: track toggle key connection
+    trackConnection(UserInputService.InputBegan:Connect(function(input, gp)
         if not gp and input.KeyCode == ApexEngine.ToggleKey then
             main.Visible = not main.Visible
             Tween(blur, 0.3, { Size = main.Visible and (cfg.Blur or 12) or 0 })
         end
-    end)
+    end))
 
     function Window:AddCategory(name)
         if order > 0 then
@@ -1086,10 +1090,14 @@ function ApexEngine:CreateWindow(cfg)
                     function obj:Open()
                         open = true
                         build()
-                        local ap = box.AbsolutePosition
-                        popup.Position = UDim2.fromOffset(ap.X, ap.Y + 22)
+                        -- FIX: defer position read so AbsolutePosition is resolved after layout
                         popup.Visible = true
                         Tween(popup, .2, { Size = UDim2.fromOffset(130, math.min(#items, 8) * 20) })
+                        task.defer(function()
+                            if not open then return end
+                            local ap = box.AbsolutePosition
+                            popup.Position = UDim2.fromOffset(ap.X, ap.Y + 22)
+                        end)
                     end
                     function obj:Set(v)
                         sel = v; pv.Text = tostring(v)
@@ -1237,8 +1245,14 @@ function ApexEngine:CreateWindow(cfg)
                     end)
                     prev.MouseButton1Click:Connect(function()
                         pop.Visible = not pop.Visible
-                        local ap = prev.AbsolutePosition
-                        pop.Position = UDim2.fromOffset(ap.X + 24, ap.Y)
+                        if pop.Visible then
+                            -- FIX: defer so position is correct after window drag
+                            task.defer(function()
+                                if not pop.Visible then return end
+                                local ap = prev.AbsolutePosition
+                                pop.Position = UDim2.fromOffset(ap.X + 24, ap.Y)
+                            end)
+                        end
                     end)
                     UserInputService.InputBegan:Connect(function(i)
                         if pop.Visible and i.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -1324,6 +1338,8 @@ function ApexEngine:CreateWindow(cfg)
     function Window:Destroy()
         blur:Destroy()
         gui:Destroy()
+        -- FIX: also clean up tracked runtime connections and drawings
+        ApexEngine:Destroy()
     end
 
     Window._authed = authed
@@ -1465,8 +1481,8 @@ end })
 -- GAME LOGIC (only runs after auth)
 -- ============================================================
 StartGameLogic = function()
-local RunService = game:GetService("RunService")
-local Camera     = workspace.CurrentCamera
+-- FIX: removed redundant local RunService (shadows outer, wastes a service call)
+local Camera = workspace.CurrentCamera
 
 -- sync hide key from flag (in case config was loaded before StartGameLogic)
 if ApexEngine.Flags["m_menukey"] then
@@ -1550,7 +1566,8 @@ RunService.Heartbeat:Connect(function(dt)
         local c = flags["w_ambient_col"] or Color3.fromRGB(120,120,160)
         Lighting.Ambient = c; Lighting.OutdoorAmbient = c
     end
-    if flags["w_time"] then Lighting.ClockTime = flags["w_time"] or 14 end
+    -- FIX: use ~= nil so value 0 (midnight) is applied correctly
+    if flags["w_time"] ~= nil then Lighting.ClockTime = flags["w_time"] end
 
     -- Bloom
     bloomEffect.Enabled   = flags["w_bloom"] ~= false
@@ -1819,11 +1836,14 @@ end
 local _frameCount = 0
 local function getSharedTarget(fovRadius, partName, visCheck)
     if _cacheFrame == _frameCount then
-        -- reuse cached result but re-check fov for the caller's radius
+        -- FIX: if cached target is within THIS caller's fov, return it;
+        -- otherwise re-run the search with the caller's (smaller) fov
         if _cachedTarget and _cachedTarget.screenDist <= fovRadius then
             return _cachedTarget.part, _cachedTarget.char
         end
-        return nil, nil
+        -- cached target exists but is outside caller's fov — do a fresh search
+        -- scoped to this caller's radius (don't overwrite the cache)
+        return getAimTarget(fovRadius, partName, true, visCheck)
     end
     _cacheFrame = _frameCount
     local part, char = getAimTarget(fovRadius, partName, true, visCheck)
@@ -2088,9 +2108,11 @@ pcall(function()
             table.insert(buf, 1, hrp.CFrame)
             if #buf > _btSize then buf[_btSize + 1] = nil end
         end
-        -- prune removed entities
+        -- FIX: prune entities whose model is gone OR whose parent is nil (handles respawn)
         for entity in pairs(_btBuffer) do
-            if not entity.Parent then _btBuffer[entity] = nil end
+            if not entity.Parent or not entity:FindFirstChild("HumanoidRootPart") then
+                _btBuffer[entity] = nil
+            end
         end
     end))
 
