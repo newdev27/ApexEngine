@@ -1691,13 +1691,18 @@ end)
 -- SILENT AIM + AIMBOT RAYCAST HOOK (Rivals-specific)
 -- ============================================================
 local _saLoaded = false
+local _saErr = ""
 pcall(function()
     local reps = game:GetService("ReplicatedStorage")
 
     -- Rivals module refs
-    local U   = require(reps.Modules.Utility)
-    local EL  = require(reps.Modules.EnumLibrary)
-    local GU  = require(reps.Modules.GameplayUtility)
+    local ok1, U  = pcall(require, reps:WaitForChild("Modules", 3) and reps.Modules:WaitForChild("Utility", 3))
+    local ok2, EL = pcall(require, reps.Modules:WaitForChild("EnumLibrary", 3))
+    local ok3, GU = pcall(require, reps.Modules:WaitForChild("GameplayUtility", 3))
+    if not ok1 or not ok2 or not ok3 then
+        _saErr = tostring(not ok1 and U or not ok2 and EL or GU)
+        return
+    end
     local cs  = game:GetService("CollectionService")
 
     -- patch gun IsFullyAiming so shots always register as aimed
@@ -1795,7 +1800,7 @@ pcall(function()
 end)
 
 if not _saLoaded then
-    warn("[ApexEngine] Silent Aim failed to load - Rivals modules not found")
+    warn("[ApexEngine] Silent Aim failed to load - " .. (_saErr ~= "" and _saErr or "Rivals modules not found"))
 end
 
 -- ============================================================
