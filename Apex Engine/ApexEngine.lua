@@ -322,7 +322,7 @@ function ApexEngine:CreateWindow(cfg)
         })
         local bg = New("Frame", {
             Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0,0,0),
-            BackgroundTransparency = 0.4, BorderSizePixel = 0, Parent = keyGui,
+            BackgroundTransparency = 0.4, BorderSizePixel = 0, Active = false, Parent = keyGui,
         })
         local box = New("Frame", {
             Size = UDim2.fromOffset(340, 160), AnchorPoint = Vector2.new(.5,.5),
@@ -351,16 +351,16 @@ function ApexEngine:CreateWindow(cfg)
             TextXAlignment = Enum.TextXAlignment.Center,
             Size = UDim2.new(1,0,0,14), Position = UDim2.fromOffset(0,108), Parent = box })
         local submitBtn = New("TextButton", {
-            Size = UDim2.fromOffset(280, 28), Position = UDim2.fromOffset(30, 74),
+            Size = UDim2.fromOffset(80, 28), Position = UDim2.fromOffset(230, 74),
             BackgroundColor3 = Theme.Accent, AutoButtonColor = false,
-            Text = "Authenticate", Font = Theme.FontBold, TextSize = 13,
+            Text = "Submit", Font = Theme.FontBold, TextSize = 13,
             TextColor3 = Color3.new(1,1,1), Visible = false, Parent = box,
         }, { Corner(4) })
         -- show button when text entered
         tb:GetPropertyChangedSignal("Text"):Connect(function()
             local hasText = #tb.Text > 0
             submitBtn.Visible = hasText
-            inputFrame.Size = hasText and UDim2.fromOffset(200, 28) or UDim2.fromOffset(280, 28)
+            inputFrame.Size = hasText and UDim2.fromOffset(190, 28) or UDim2.fromOffset(280, 28)
         end)
         submitBtn.MouseButton1Click:Connect(function()
             statusLbl.Text = "Checking..."
@@ -371,6 +371,7 @@ function ApexEngine:CreateWindow(cfg)
                     authed = true
                     done = true
                     keyGui:Destroy()
+                    StartGameLogic()
                 else
                     statusLbl.Text = msg
                     statusLbl.TextColor3 = Color3.fromRGB(255, 80, 80)
@@ -971,6 +972,7 @@ function ApexEngine:CreateWindow(cfg)
         gui:Destroy()
     end
 
+    if authed then task.spawn(StartGameLogic) end
     return Window
 end
 
@@ -1131,8 +1133,9 @@ m2:AddSlider({ Name = "Menu scale", Min = 50, Max = 150, Default = 100, Suffix =
 m2:AddLabel("Menu key: Insert")
 
 -- ============================================================
--- GAME DETECTION
+-- GAME LOGIC (only runs after auth)
 -- ============================================================
+local function StartGameLogic()
 local RunService = game:GetService("RunService")
 local Camera     = workspace.CurrentCamera
 
@@ -1857,5 +1860,7 @@ if ApexEngine.Flags["lua_autoload"] then
         pcall(function() loadConfig(sel) end)
     end
 end
+
+end -- StartGameLogic
 
 return ApexEngine
