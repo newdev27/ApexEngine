@@ -1014,9 +1014,9 @@ local Window = ApexEngine:CreateWindow({
     OnSave = function(flags) print("[ApexEngine] saved", flags) end,
 })
 
-Window:AddCategory("Aimbot")
-local Ragebot  = Window:AddTab("Ragebot",  Icons.crosshairs)
-local Legitbot = Window:AddTab("Legitbot", Icons.mouse)
+Window:AddCategory("Combat")
+local Ragebot  = Window:AddTab("Combat",  Icons.crosshairs)
+local Legitbot = Ragebot
 
 Window:AddCategory("Visuals")
 local PlayersTab = Window:AddTab("Players", Icons.user)
@@ -1026,16 +1026,16 @@ Window:AddCategory("Miscellaneous")
 local MainTab = Window:AddTab("Main",    Icons.hammer)
 local Scripts = Window:AddTab("Scripts", Icons.code)
 
-local RGen = Ragebot:AddSubtab("General")
+local RGen = Ragebot:AddSubtab("Aimbot")
 local RAdv = Ragebot:AddSubtab("Advanced")
 
-local g = RGen:AddGroup("Ragebot", Icons.feather, "Left", 220)
+local g = RGen:AddGroup("Aimbot", Icons.feather, "Left", 220)
 g:AddCheckbox({ Name = "Enabled", Icon = Icons.dagger, Default = true, Flag = "rg_enabled" })
 g:AddKeybind({ Name = "Activation key", Default = Enum.KeyCode.E, Flag = "rg_key" })
 g:AddCheckbox({ Name = "Hold to activate", Default = true, Flag = "rg_hold" })
 g:AddSlider({ Name = "Field of view", Min = 0, Max = 180, Default = 90, Suffix = "°", Flag = "rg_fov" })
 g:AddSlider({ Name = "Smoothness", Min = 0, Max = 100, Default = 35, Suffix = "%", Flag = "rg_smooth" })
-g:AddSlider({ Name = "Delay", Min = 0, Max = 500, Default = 50, Suffix = "ms", Flag = "rg_delay" })
+g:AddSlider({ Name = "Delay", Min = 0, Max = 500, Default = 0, Suffix = "ms", Flag = "rg_delay" })
 
 local g2 = RGen:AddGroup("Targeting", Icons.crown, "Right", 220)
 g2:AddCheckbox({ Name = "Ignore team", Flag = "rg_team" })
@@ -1061,8 +1061,12 @@ sa1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "sa_enabled" })
 sa1:AddSlider({ Name = "FOV", Min = 1, Max = 360, Default = 180, Suffix = "°", Flag = "sa_fov" })
 sa1:AddCheckbox({ Name = "Backtrack", Default = true, Flag = "sa_backtrack" })
 sa1:AddCheckbox({ Name = "Wall bang", Default = false, Flag = "sa_wallbang" })
+local sa2 = SAGen:AddGroup("Draw", Icons.pallet, "Right")
+sa2:AddCheckbox({ Name = "Draw circle", Default = true, Flag = "sa_circle" })
+sa2:AddColorPicker({ Name = "Circle color", Default = Color3.fromRGB(255, 80, 80), Flag = "sa_circle_col" })
+sa2:AddSlider({ Name = "Thickness", Min = 1, Max = 5, Default = 1, Flag = "sa_thick" })
 
-local LGen = Legitbot:AddSubtab("General")
+local LGen = Ragebot:AddSubtab("Legitbot")
 local l1 = LGen:AddGroup("Assist", Icons.mouse, "Left")
 l1:AddCheckbox({ Name = "Enabled", Flag = "lg_enabled" })
 l1:AddKeybind({ Name = "Key", Default = Enum.KeyCode.Q, Flag = "lg_key" })
@@ -1077,7 +1081,7 @@ l2:AddColorPicker({ Name = "Circle color", Default = Color3.fromRGB(255, 255, 25
 l2:AddSlider({ Name = "Thickness", Min = 1, Max = 5, Default = 1, Flag = "lg_thick" })
 l2:AddCheckbox({ Name = "Filled", Flag = "lg_filled" })
 
-local TBGen = Legitbot:AddSubtab("Triggerbot")
+local TBGen = Ragebot:AddSubtab("Triggerbot")
 local tb1 = TBGen:AddGroup("Triggerbot", Icons.dagger, "Left")
 tb1:AddCheckbox({ Name = "Enabled", Default = false, Flag = "tb_enabled" })
 tb1:AddDropdown({ Name = "Target part", Items = { "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart" }, Default = "Head", Flag = "tb_part" })
@@ -1466,8 +1470,8 @@ _rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 -- Per-frame target cache: both ragebot and legitbot read from this
 -- so they always lock the same enemy and don't fight each other
-local _cachedTarget = nil  -- { part, char, screenDist }
-local _cacheFrame   = -1
+local _cachedTarget = nil
+local _cacheFrame   = -2
 
 local function getAimTarget(fovRadius, partName, skipTeam, visCheck)
     local vpCenter = Camera.ViewportSize / 2
@@ -1540,6 +1544,10 @@ local lgCircle = Drawing.new("Circle")
 lgCircle.Visible = false; lgCircle.Filled = false
 lgCircle.Thickness = 1; lgCircle.Color = Color3.new(1,1,1); lgCircle.NumSides = 64
 
+local saCircle = Drawing.new("Circle")
+saCircle.Visible = false; saCircle.Filled = false
+saCircle.Thickness = 1; saCircle.Color = Color3.fromRGB(255,80,80); saCircle.NumSides = 64
+
 local lgHoldActive = false
 local lgToggleOn   = false
 local lgReactTimer = 0
@@ -1582,8 +1590,10 @@ end)
 -- ============================================================
 -- TRIGGERBOT
 -- ============================================================
-local tbCooldown = 0
-local tbWasOver  = false
+local tbCooldown  = 0
+local tbWasOver   = false
+local _tbRayParams = RaycastParams.new()
+_tbRayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 -- ============================================================
 -- UNIFIED AIMBOT LOOP (Ragebot + Legitbot + Triggerbot in one pass)
@@ -1595,7 +1605,7 @@ RunService.Heartbeat:Connect(function(dt)
     local flags     = ApexEngine.Flags
     local vpCenter  = Camera.ViewportSize / 2
 
-    -- ── Legitbot FOV circle (show whenever draw circle is on, independent of key) ──
+    -- ── Legitbot FOV circle ──
     local lgEnabled = flags["lg_enabled"]
     local fovRadius = flags["lg_fov"] or 90
     lgCircle.Visible = lgEnabled and flags["lg_circle"] ~= false
@@ -1605,6 +1615,15 @@ RunService.Heartbeat:Connect(function(dt)
         lgCircle.Color     = flags["lg_circle_col"] or Color3.new(1,1,1)
         lgCircle.Thickness = flags["lg_thick"] or 1
         lgCircle.Filled    = flags["lg_filled"] or false
+    end
+
+    -- ── Silent Aim FOV circle ──
+    saCircle.Visible = flags["sa_enabled"] and flags["sa_circle"] ~= false
+    if saCircle.Visible then
+        saCircle.Radius    = flags["sa_fov"] or 180
+        saCircle.Position  = vpCenter
+        saCircle.Color     = flags["sa_circle_col"] or Color3.fromRGB(255,80,80)
+        saCircle.Thickness = flags["sa_thick"] or 1
     end
 
     -- ── Determine which systems are active this frame ──
@@ -1634,14 +1653,20 @@ RunService.Heartbeat:Connect(function(dt)
             local hrp = tchar and tchar:FindFirstChild("HumanoidRootPart")
             if not hrp or (Camera.CFrame.Position - hrp.Position).Magnitude <= maxDist then
                 rgDelayTimer = 0
-                local smooth = math.max(flags["rg_smooth"] or 1, 1)
+                local smooth  = math.max(flags["rg_smooth"] or 1, 1)
                 local predPos = predictPos(target, 1/60)
-                local sp = Camera:WorldToViewportPoint(predPos)
-                local delta = Vector2.new(sp.X, sp.Y) - vpCenter
-                local jPct = (flags["adv_random"] or 0) / 100
-                local jx = (math.random() - 0.5) * 2 * jPct * delta.X
-                local jy = (math.random() - 0.5) * 2 * jPct * delta.Y
-                mousemoverel((delta.X + jx) / smooth, (delta.Y + jy) / smooth)
+                local sp      = Camera:WorldToViewportPoint(predPos)
+                local delta   = Vector2.new(sp.X, sp.Y) - vpCenter
+                -- smooth=1 → full snap each fire; smooth=100 → 1% of delta each fire
+                local factor  = 1 / smooth
+                local jPct    = (flags["adv_random"] or 0) / 100
+                local jx      = (math.random() - 0.5) * 2 * jPct * delta.X
+                local jy      = (math.random() - 0.5) * 2 * jPct * delta.Y
+                mousemoverel((delta.X + jx) * factor, (delta.Y + jy) * factor)
+                -- Auto fire
+                if flags["rg_autofire"] then
+                    task.spawn(function() mouse1press(); task.wait(0.06); mouse1release() end)
+                end
             end
         elseif not target then
             rgDelayTimer = 0
@@ -1667,8 +1692,11 @@ RunService.Heartbeat:Connect(function(dt)
     -- ── TRIGGERBOT ──
     if tbActive then
         tbCooldown = math.max(0, tbCooldown - dt)
-        local tbFov    = flags["tb_fov"] or 15
-        local tbTarget = getAimTarget(tbFov, flags["tb_part"] or "Head", true, flags["tb_vis"] ~= false)
+        local tbFov  = flags["tb_fov"] or 15
+        local tbPart = flags["tb_part"] or "Head"
+        local tbVis  = flags["tb_vis"] ~= false
+        -- use dedicated ray params so it doesn't conflict with shared aimbot params
+        local tbTarget = getAimTarget(tbFov, tbPart, true, tbVis)
         local isOver   = tbTarget ~= nil
 
         -- fire on the leading edge (cursor just entered target) + cooldown guard
