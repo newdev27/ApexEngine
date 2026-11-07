@@ -1,0 +1,12 @@
+{
+  "keys": {
+    "APEX-FR3T2A-K9P2M1-X7": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "free",
+      "created_at": 0,
+      "expires_at": 0,
+      "note": "test free key - replace expires_at with real timestamp"
+    }
+  }
+}
