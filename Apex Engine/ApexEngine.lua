@@ -3178,3 +3178,86 @@ terAdded:Connect(function()
 end
 
 return ApexEngine
+-- ============================================================
+-- HAMMER: INSTANT EQUIP + RAPID HIT
+-- ============================================================
+do
+    local HammerMeleeRemote = game:GetService("ReplicatedStorage"):FindFirstChild("HammerMeleeRemote")
+    if not HammerMeleeRemote then
+        task.spawn(function()
+            HammerMeleeRemote = game:GetService("ReplicatedStorage"):WaitForChild("HammerMeleeRemote", 15)
+        end)
+    end
+
+    local function getHammerOriginDir()
+        local cam = workspace.CurrentCamera
+        if not cam then return nil, nil end
+        local vp = cam.ViewportSize
+        local ray = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.5, 0)
+        return ray.Origin, ray.Direction.Unit
+    end
+
+    local function fireHammerHit(toolName)
+        if not HammerMeleeRemote then return end
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local origin, unit = getHammerOriginDir()
+        if not origin or not unit then return end
+        pcall(function()
+            HammerMeleeRemote:FireServer(toolName, origin, unit, workspace:GetServerTimeNow())
+        end)
+    end
+
+    -- Instant Equip: fire a hit immediately when a hammer tool is equipped
+    trackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+        char.ChildAdded:Connect(function(child)
+            if not ApexEngine.Flags["instant_equip"] then return end
+            if not child:IsA("Tool") then return end
+            -- small defer so the tool is fully parented before firing
+            task.defer(function()
+                if child.Parent == char then
+                    fireHammerHit(child.Name)
+                end
+            end)
+        end)
+    end))
+    -- also hook current character if already spawned
+    if LocalPlayer.Character then
+        LocalPlayer.Character.ChildAdded:Connect(function(child)
+            if not ApexEngine.Flags["instant_equip"] then return end
+            if not child:IsA("Tool") then return end
+            task.defer(function()
+                if child.Parent == LocalPlayer.Character then
+                    fireHammerHit(child.Name)
+                end
+            end)
+        end)
+    end
+
+    -- Hammer Rapid Hit: spam HammerMeleeRemote while holding a hammer
+    local _hammerRapidConn = nil
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        if flags["hammer_rapid"] then
+            if not _hammerRapidConn then
+                _hammerRapidConn = true
+                task.spawn(function()
+                    while ApexEngine.Flags["hammer_rapid"] do
+                        local char = LocalPlayer.Character
+                        local tool = char and char:FindFirstChildOfClass("Tool")
+                        if tool then
+                            fireHammerHit(tool.Name)
+                        end
+                        local rate = ApexEngine.Flags["hammer_rapid_rate"] or 5
+                        task.wait(1 / rate)
+                    end
+                    _hammerRapidConn = nil
+                end)
+            end
+        else
+            _hammerRapidConn = nil
+        end
+    end))
+end
+
