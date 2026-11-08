@@ -9,73 +9,7 @@ if getgenv().apexengine_loaded then
 end
 getgenv().apexengine_loaded = true
 
--- ── Anti-Cheat Bypass (Hyperion + Byfron) ─────────────────
-do
-    -- Layer 1: Byfron / Hyperion script activity monitor bypass
-    -- Spoofs the script identity so AC telemetry sees a whitelisted source
-    local _spoofed = false
-    pcall(function()
-        if syn and syn.set_thread_identity then
-            syn.set_thread_identity(8)
-            _spoofed = true
-        elseif setthreadidentity then
-            setthreadidentity(8)
-            _spoofed = true
-        elseif KRNL_LOADED and setidentity then
-            setidentity(8)
-            _spoofed = true
-        end
-    end)
-
-    -- Layer 2: Hook __index on game to intercept AC module detection
-    -- Byfron scans for known cheat module names in the DataModel hierarchy;
-    -- we return nil for any lookup that matches known AC probe patterns.
-    if hookmetamethod and newcclosure then
-        pcall(function()
-            local _bannedProbes = {
-                ["RbxAnalyticsService"] = false, -- allow (we use it for HWID)
-                ["ScriptContext"]        = true,
-                ["CoreScriptSyncService"]= true,
-            }
-            local _origGameIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
-                if _bannedProbes[key] then return nil end
-                return _origGameIndex(self, key)
-            end))
-        end)
-    end
-
-    -- Layer 3: Hyperion integrity check bypass
-    -- Hyperion periodically calls getscriptbytecode / getscripthash on running scripts.
-    -- We hook these to return empty/spoofed values so our script appears as a blank slate.
-    pcall(function()
-        if hookfunction and newcclosure then
-            if getscriptbytecode then
-                local _origGSB = getscriptbytecode
-                hookfunction(_origGSB, newcclosure(function(s)
-                    local ok, res = pcall(_origGSB, s)
-                    if ok and res and #res > 0 then
-                        -- only spoof scripts that are ours (running in identity 8)
-                        local si = pcall(function() return s.Source end)
-                        if not si then return "" end
-                    end
-                    return ok and res or ""
-                end))
-            end
-            if getscripthash then
-                local _origGSH = getscripthash
-                hookfunction(_origGSH, newcclosure(function(s)
-                    local ok, res = pcall(_origGSH, s)
-                    return ok and res or ""
-                end))
-            end
-        end
-    end)
-
-    -- Layer 4: Byfron remote call fingerprint scrambler
-    -- Byfron tracks FireServer call frequency and argument patterns.
-    -- We add a jitter delay to our own remote calls to break pattern detection.
-    -- (Applied inside the namecall hook below via task.defer on non-cheat remotes)
-end
+-- AC Bypass skipped (not needed for this executor)
 
 local _runtimeConnections = {}
 local function trackConnection(c)
@@ -3222,7 +3156,7 @@ do
         _tpOrigSubj = cam.CameraSubject
         _tpOrigFOV  = cam.FieldOfView
         cam.CameraType = Enum.CameraType.Custom
-
+        -- set subject to humanoid so Roblox handles the orbit, just push the zoom out
         local char = LocalPlayer.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if hum then cam.CameraSubject = hum end
