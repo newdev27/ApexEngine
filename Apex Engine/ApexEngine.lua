@@ -1778,7 +1778,8 @@ do
     -- regardless of which remote they use. The reference confirms the game uses GunFire
     -- but we also catch any remote that passes 2+ Vector3 args as a fallback.
     if hookmetamethod and newcclosure then
-        local _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local _origNamecall
+        _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             local method = getnamecallmethod()
             if method ~= "FireServer" then return _origNamecall(self, ...) end
             if not self:IsA("RemoteEvent") then return _origNamecall(self, ...) end
