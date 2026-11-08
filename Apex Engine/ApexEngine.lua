@@ -950,28 +950,23 @@ local CombatPage = CombatTab:AddSubtab("Main")
 -- Left: Aim Assistance
 local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
 aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
-aimG:AddKeybind({  Name="Silent Aim Key",Default=Enum.KeyCode.Q, Flag="sa_key" })
+aimG:AddKeybind({  Name="SA Toggle Key", Default=Enum.KeyCode.Q, Flag="sa_key", Callback=function() ApexEngine.Flags["sa_enabled"] = not ApexEngine.Flags["sa_enabled"] end })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
 aimG:AddSeparator()
-aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
-aimG:AddKeybind({  Name="Triggerbot Key",Default=Enum.KeyCode.CapsLock, Flag="tb_key" })
-aimG:AddSlider({   Name="Trigger FOV",  Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
-aimG:AddSlider({   Name="Reaction Delay",Min=0,Max=500,Default=50,Suffix="ms",Flag="tb_delay" })
+
 
 -- Left: Aimbot
 local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
 abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
-abG:AddKeybind({  Name="Aimbot Key",    Default=Enum.KeyCode.E, Flag="ab_key" })
+abG:AddKeybind({  Name="AB Toggle Key", Default=Enum.KeyCode.E, Flag="ab_key", Callback=function() ApexEngine.Flags["ab_enabled"] = not ApexEngine.Flags["ab_enabled"] end })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
-abG:AddCheckbox({ Name="Camlock",       Default=false, Flag="ab_camlock" })
-abG:AddKeybind({  Name="Camlock Key",   Default=Enum.KeyCode.F, Flag="ab_camlock_key" })
-abG:AddSlider({   Name="Camlock Smooth",Min=1,Max=50,Default=10,Flag="ab_camlock_smooth" })
+
 
 -- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
@@ -1107,6 +1102,7 @@ moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" }
 moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
+moveG:AddKeybind({  Name="Fly Toggle Key",  Default=Enum.KeyCode.G, Flag="m_fly_key", Callback=function() ApexEngine.Flags["m_fly"] = not ApexEngine.Flags["m_fly"] end })
 moveG:AddSlider({   Name="Fly Speed",       Min=1,Max=100,Default=20,Flag="m_flyspeed" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Spectate",        Default=false, Flag="m_spectate" })
@@ -1134,9 +1130,13 @@ end })
 miscPG:AddSlider({   Name="Cam Speed",      Min=10, Max=200, Default=50, Flag="m_freecam_speed" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="No Clip",        Default=false, Flag="m_noclip" })
-miscPG:AddLabel("NoClip: walk through walls")
+miscPG:AddKeybind({  Name="NC Toggle Key",  Default=Enum.KeyCode.N, Flag="m_noclip_key", Callback=function() ApexEngine.Flags["m_noclip"] = not ApexEngine.Flags["m_noclip"] end })
+miscPG:AddCheckbox({ Name="Third Person",   Default=false, Flag="m_thirdperson" })
+miscPG:AddKeybind({  Name="TP Toggle Key",  Default=Enum.KeyCode.T, Flag="m_thirdperson_key", Callback=function() ApexEngine.Flags["m_thirdperson"] = not ApexEngine.Flags["m_thirdperson"] end })
+miscPG:AddSlider({   Name="TP Distance",    Min=5,Max=30,Default=12,Flag="m_thirdperson_dist" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="X-Ray",          Default=false, Flag="m_xray" })
+miscPG:AddKeybind({  Name="XR Toggle Key",  Default=Enum.KeyCode.X, Flag="m_xray_key", Callback=function() ApexEngine.Flags["m_xray"] = not ApexEngine.Flags["m_xray"] end })
 miscPG:AddColorPicker({ Name="X-Ray Color", Default=Color3.fromRGB(255, 80, 200), Flag="m_xray_col" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="Zoom",           Default=false, Flag="m_zoom" })
@@ -1811,9 +1811,11 @@ do
 
     local function drawBulletTracer(fromWorld, toWorld)
         local cam = workspace.CurrentCamera
-        local spA = cam:WorldToViewportPoint(fromWorld)
+        local vp  = cam.ViewportSize
+        -- always draw from screen center so it looks correct on screen
+        local ax, ay = vp.X / 2, vp.Y / 2
         local spB = cam:WorldToViewportPoint(toWorld)
-        local ax, ay = spA.X, spA.Y
+        if spB.Z <= 0 then return end
         local bx, by = spB.X, spB.Y
         local dx, dy = bx - ax, by - ay
         local len = math.sqrt(dx*dx + dy*dy)
@@ -1891,19 +1893,21 @@ do
                 end
             end
 
-            -- Silent Aim
+            -- Silent Aim (toggle, improved: velocity prediction + closest in FOV)
             if flags["sa_enabled"] then
-                local key = flags["sa_key"]
-                local keyHeld = (not key) or UserInputService:IsKeyDown(key)
-                if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
+                if math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
                     local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
                     if target then
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
-                            args[3] = (part.Position - origin).Unit
+                            local vel = target.root.AssemblyLinearVelocity
+                            local dist = (part.Position - origin).Magnitude
+                            local travelTime = dist / 500
+                            local predicted = part.Position + vel * travelTime
+                            args[3] = (predicted - origin).Unit
                             if flags["bullet_tracers"] then
-                                task.spawn(drawBulletTracer, origin, part.Position)
+                                task.spawn(drawBulletTracer, origin, predicted)
                             end
                         end
                     end
@@ -1950,29 +1954,55 @@ do
         end))
     end))
 
-    -- No Recoil: hook the recoil BindToRenderStep so the accumulator is zeroed each frame
-    local _origBind = RunService.BindToRenderStep
-    local _recoilHooked = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        if _recoilHooked or not hookfunction then return end
-        _recoilHooked = true
-        hookfunction(_origBind, newcclosure(function(self, name, priority, fn)
-            if type(name) == "string" and name:find("Recoil_") then
-                local wrapped = newcclosure(function(dt)
-                    if ApexEngine.Flags["no_recoil"] then return end
-                    fn(dt)
-                end)
-                return _origBind(self, name, priority, wrapped)
+    -- No Recoil
+    -- Layer 1: hook RunService.BindToRenderStep so every "Recoil_*" bind the gun scripts
+    -- register gets wrapped — when no_recoil is on the wrapped fn is a no-op.
+    -- This covers ALL guns because ClientGun always uses BindToRenderStep("Recoil_"..name, ...).
+    if hookfunction and newcclosure then
+        local _origBTRS = RunService.BindToRenderStep
+        hookfunction(_origBTRS, newcclosure(function(self, name, priority, fn)
+            if type(name) == "string" and name:sub(1, 7) == "Recoil_" then
+                return _origBTRS(self, name, priority, newcclosure(function(dt)
+                    if not ApexEngine.Flags["no_recoil"] then fn(dt) end
+                end))
             end
-            return _origBind(self, name, priority, fn)
+            return _origBTRS(self, name, priority, fn)
         end))
-    end))
+    end
 
-    -- Aimbot
+    -- Layer 2: camera pitch-lock at Last priority catches any recoil that slips through
+    -- (guns already equipped before the hook, or executors that don't support hookfunction).
+    -- Logic: recoil is a small automatic upward pitch change with no corresponding yaw change.
+    -- Normal mouse movement produces larger or yaw-coupled deltas, so we only cancel tiny
+    -- pitch-only jumps.
+    local _nrPitch = 0
+    local _nrYaw   = 0
+    RunService:BindToRenderStep("ApexNoRecoil", Enum.RenderPriority.Last.Value, function()
+        local cam = workspace.CurrentCamera
+        local cf  = cam.CFrame
+        local rx, ry = cf:ToEulerAnglesYXZ()
+        if not ApexEngine.Flags["no_recoil"] then
+            _nrPitch = rx
+            _nrYaw   = ry
+            return
+        end
+        local dp = rx - _nrPitch
+        local dy = math.abs(ry - _nrYaw)
+        -- recoil: small upward pitch (negative rx delta in Roblox = looking up) with no yaw
+        if dp < 0 and math.abs(dp) < 0.07 and dy < 0.01 then
+            cam.CFrame = CFrame.new(cf.Position)
+                * CFrame.Angles(0, _nrYaw, 0)
+                * CFrame.Angles(_nrPitch, 0, 0)
+        else
+            _nrPitch = rx
+            _nrYaw   = ry
+        end
+    end)
+
+    -- Aimbot (toggle, improved: distance-based velocity prediction)
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
@@ -1981,53 +2011,22 @@ do
         local targetPos = part.Position
         if flags["ab_predict"] then
             local vel = target.root.AssemblyLinearVelocity
-            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if myRoot then
-                -- prediction scalar 0.12 matches reference
-                targetPos = targetPos + vel * ((flags["ab_smooth"] or 10) * 0.012)
-            end
+            local cam = workspace.CurrentCamera
+            local dist = (targetPos - cam.CFrame.Position).Magnitude
+            local travelTime = math.clamp(dist / 500, 0, 0.3)
+            targetPos = targetPos + vel * travelTime
         end
         local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
-        -- CFrame.lookAt + Lerp (reference approach — no mouse jitter, works in all executors)
         local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
-        local lerpFactor = math.clamp(1 - smooth, 0.01, 0.99)
+        local lerpFactor = math.clamp(1 - smooth, 0.02, 0.98)
         local w = cam.CFrame
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
     end))
 
-    -- Triggerbot: raycast from screen center, fire GunFire remote directly
-    local _tbLastFire = 0
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["tb_enabled"] then return end
-        if not UserInputService:IsKeyDown(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
-        local delay = (flags["tb_delay"] or 50) / 1000
-        if os.clock() - _tbLastFire < delay then return end
-        if not GunFire then return end
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local ray = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.5)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { LocalPlayer.Character }
-        local hit = workspace:Raycast(ray.Origin, ray.Direction * 800, params)
-        if not hit or not hit.Instance then return end
-        local model = hit.Instance:FindFirstAncestorOfClass("Model")
-        local hum   = model and model:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then return end
-        local isEnemy = false
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character == model and p ~= LocalPlayer then isEnemy = true; break end
-        end
-        if not isEnemy then return end
-        _tbLastFire = os.clock()
-        local dir = (hit.Position - ray.Origin).Unit
-        task.spawn(function()
-            GunFire:FireServer(ray.Origin, hit.Position, dir)
-        end)
-    end))
+    -- Triggerbot removed
+    -- Camlock (toggle) removed
 end
 
 -- ============================================================
@@ -2333,10 +2332,10 @@ do
                 local r   = math.clamp(2*(1-hp), 0, 1)
                 local g   = math.clamp(2*hp, 0, 1)
                 local col = flags["esp_health_col"] or Color3.new(r, g, 0.1)
-                local barH = 60
-                local midY = (y1 + y2) / 2
-                d.healthBg.Position = UDim2.fromOffset(x1 - 7, midY - barH/2)
-                d.healthBg.Size     = UDim2.fromOffset(4, barH)
+                local barW, barH = 4, 60
+                local headSP2 = cam:WorldToViewportPoint(head.Position)
+                d.healthBg.Position = UDim2.fromOffset(headSP2.X - 20, headSP2.Y - barH/2)
+                d.healthBg.Size     = UDim2.fromOffset(barW, barH)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
                 d.healthFill.Size   = UDim2.new(1, 0, hp, 0)
@@ -2563,52 +2562,49 @@ do
 end
 
 -- ============================================================
--- X-RAY
+-- X-RAY (make world parts transparent so enemies show through walls)
 -- ============================================================
 do
-    local _xrayData = {} -- [player] = Highlight
+    local _xrayParts = {} -- [BasePart] = originalTransparency
+    local _xrayActive = false
 
-    local function ensureXray(p)
-        if _xrayData[p] then return end
-        local hl = Instance.new("Highlight")
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
-        hl.Enabled = false
-        hl.Parent = game:GetService("CoreGui")
-        _xrayData[p] = hl
-    end
-
-    local function removeXray(p)
-        local hl = _xrayData[p]
-        if hl then pcall(function() hl:Destroy() end); _xrayData[p] = nil end
-    end
-
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        local enabled = flags["m_xray"] == true
-        local col = flags["m_xray_col"] or Color3.fromRGB(255, 80, 200)
+    local function applyXray()
+        -- make all non-character BaseParts in workspace transparent
+        local charSet = {}
         for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            ensureXray(p)
-            local hl = _xrayData[p]
-            local char = p.Character
-            if enabled and char then
-                hl.Adornee = char
-                hl.FillColor = col
-                hl.OutlineColor = col
-                hl.Enabled = true
-            else
-                hl.Enabled = false
+            if p.Character then charSet[p.Character] = true end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                -- skip character parts and terrain
+                local anc = obj:FindFirstAncestorOfClass("Model")
+                if anc and charSet[anc] then continue end
+                if not _xrayParts[obj] then
+                    _xrayParts[obj] = obj.Transparency
+                end
+                obj.Transparency = 0.85
             end
         end
-        -- clean up
-        for p in pairs(_xrayData) do
-            if not p.Parent then removeXray(p) end
+    end
+
+    local function removeXray()
+        for obj, orig in pairs(_xrayParts) do
+            pcall(function() obj.Transparency = orig end)
+        end
+        table.clear(_xrayParts)
+    end
+
+    local _prevXray = false
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local cur = ApexEngine.Flags["m_xray"] == true
+        if cur == _prevXray then return end
+        _prevXray = cur
+        if cur then
+            applyXray()
+        else
+            removeXray()
         end
     end))
-
-    Players.PlayerRemoving:Connect(removeXray)
 end
 
 -- ============================================================
@@ -2758,43 +2754,7 @@ do
     end))
 end
 
--- ============================================================
--- CAMLOCK
--- ============================================================
-do
-    trackConnection(RunService.RenderStepped:Connect(function(dt)
-        local flags = ApexEngine.Flags
-        if not flags["ab_camlock"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best=head end
-                end
-            end
-        end
-        if not best then return end
-        local targetPos = best.Position
-        -- velocity prediction
-        local hroot = best.Parent and best.Parent:FindFirstChild("HumanoidRootPart")
-        if hroot then
-            targetPos = targetPos + hroot.AssemblyLinearVelocity * ((flags["ab_camlock_smooth"] or 10) * 0.012)
-        end
-        local smooth = math.clamp((flags["ab_camlock_smooth"] or 10) / 50, 0.01, 1)
-        local w = cam.CFrame
-        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1-smooth, 0.01, 0.99))
-    end))
-end
+
 
 -- ============================================================
 -- SPINBOT
@@ -2816,9 +2776,14 @@ do
         elseif mode == "Jitter" then
             pitch = math.rad(math.random() > 0.5 and 65 or -75)
         end
-        root.CFrame = CFrame.new(root.Position)
+        -- preserve position, only rotate — avoids physics fling
+        local pos = root.Position
+        root.CFrame = CFrame.new(pos)
             * CFrame.Angles(0, math.rad(yaw), 0)
             * CFrame.Angles(pitch, 0, 0)
+        root.AssemblyLinearVelocity = Vector3.new(
+            root.AssemblyLinearVelocity.X, root.AssemblyLinearVelocity.Y, root.AssemblyLinearVelocity.Z
+        )
     end))
 end
 
@@ -2853,24 +2818,27 @@ do
         if cur == _prevNC then return end
         _prevNC = cur
         local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and char:FindFirstChild("HumanoidRootPart")
         if cur then
-            -- PreSimulation fires before physics resolves, minimising rubberband
             _ncConn = RunService.PreSimulation:Connect(function()
                 local c = LocalPlayer.Character
                 if not c then return end
                 local r = c:FindFirstChild("HumanoidRootPart")
                 if r then
-                    -- kill server-side velocity correction each frame
                     r.AssemblyLinearVelocity = Vector3.new(
                         r.AssemblyLinearVelocity.X,
-                        math.max(r.AssemblyLinearVelocity.Y, 0), -- keep upward, kill downward snap
+                        math.max(r.AssemblyLinearVelocity.Y, 0),
                         r.AssemblyLinearVelocity.Z
                     )
                 end
+                -- disable collision on character AND held tool
                 for _, p in ipairs(c:GetDescendants()) do
                     if p:IsA("BasePart") then p.CanCollide = false end
+                end
+                local tool = c:FindFirstChildOfClass("Tool")
+                if tool then
+                    for _, p in ipairs(tool:GetDescendants()) do
+                        if p:IsA("BasePart") then p.CanCollide = false end
+                    end
                 end
             end)
         else
@@ -3011,20 +2979,6 @@ do
             end
         end
     end))
-end
-
--- ============================================================
--- INSTANT BULLET (hook extension — adds to existing GunFire hook)
--- ============================================================
--- Handled inside the existing _saHooked block via flags["instant_bullet"]
--- We patch the hook to also check instant_bullet:
-do
-    -- The existing hook already fires; we extend it by watching the flag.
-    -- Instant bullet is applied inside the hookfunction via args[1] redirect.
-    -- We add a post-hook watcher that modifies args[1] (muzzle pos) to near target.
-    -- Since hookfunction is already set, we use a flag check inside the existing hook.
-    -- The existing hook block checks flags["always_headshot"] — we piggyback instant_bullet there.
-    -- No additional code needed here; the hook block below is updated.
 end
 
 -- ============================================================
@@ -3201,6 +3155,68 @@ do
             if not drawn[id] then hideC4Label(id) end
         end
     end))
+end
+
+-- ============================================================
+-- THIRD PERSON
+-- ============================================================
+do
+    local _tpActive = false
+    local _tpOrigType = nil
+    local _tpOrigSubj = nil
+    local _tpOrigFOV  = nil
+
+    local function enableTP()
+        if _tpActive then return end
+        _tpActive = true
+        local cam = workspace.CurrentCamera
+        _tpOrigType = cam.CameraType
+        _tpOrigSubj = cam.CameraSubject
+        _tpOrigFOV  = cam.FieldOfView
+        cam.CameraType = Enum.CameraType.Custom
+        -- set subject to humanoid so Roblox handles the orbit, just push the zoom out
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then cam.CameraSubject = hum end
+    end
+
+    local function disableTP()
+        if not _tpActive then return end
+        _tpActive = false
+        local cam = workspace.CurrentCamera
+        cam.CameraType = _tpOrigType or Enum.CameraType.Custom
+        if _tpOrigSubj then cam.CameraSubject = _tpOrigSubj end
+        cam.FieldOfView = _tpOrigFOV or 70
+    end
+
+    local _prevTP = false
+    trackConnection(RunService.RenderStepped:Connect(function()
+        local flags = ApexEngine.Flags
+        local cur = flags["m_thirdperson"] == true
+        if cur ~= _prevTP then
+            _prevTP = cur
+            if cur then enableTP() else disableTP() end
+        end
+        if not _tpActive then return end
+        -- push camera back by TP distance using CameraOffset on HRP
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local dist = flags["m_thirdperson_dist"] or 12
+            hrp.CameraOffset = Vector3.new(0, 2, dist)
+        end
+    end))
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        if _tpActive then
+            -- re-apply subject on respawn
+            task.defer(function()
+                local char = LocalPlayer.Character
+                local hum  = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then workspace.CurrentCamera.CameraSubject = hum end
+            end)
+        end
+    end)
 end
 
 return ApexEngine
