@@ -1,7 +1,7 @@
 
 --[[
     Apex Engine — Brisk Survival cheat
-    Designed and developed by Barlas (discord: 5nqs)
+    Designed and developed by Foreman (discord: TheOfficialForeman)
 ]]
 
 if getgenv().apexengine_loaded then
