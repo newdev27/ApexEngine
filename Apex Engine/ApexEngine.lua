@@ -1787,20 +1787,7 @@ do
             if not self:IsA("RemoteEvent") then return _origNamecall(self, ...) end
 
             local name = self.Name
-            local isGunFire = name == "GunFire" or name == "Fire" or name == "Shoot"
-                or name == "BulletFire" or name == "ShootGun" or name == "FireGun"
-                or name == "GunShoot" or name == "WeaponFire" or name == "ShootEvent"
-                or name == "FireWeapon" or name == "FireBullet" or name == "BulletShoot"
-                or name == "ShotFired" or name == "PlayerShoot" or name == "ClientFire"
-            if not isGunFire then
-                -- fallback: check for 2+ Vector3 args
-                local a = {...}
-                local v3c = 0
-                for i = 1, math.min(#a, 6) do
-                    if typeof(a[i]) == "Vector3" then v3c += 1 end
-                    if v3c >= 2 then isGunFire = true; break end
-                end
-            end
+            local isGunFire = name == "GunFire"
             if not isGunFire then return _origNamecall(self, ...) end
 
             local args = {...}
@@ -3232,6 +3219,26 @@ do
 
     if LocalPlayer.Character then hookChar(LocalPlayer.Character) end
     trackConnection(LocalPlayer.CharacterAdded:Connect(hookChar))
+end
+
+-- ============================================================
+-- FIX: DeathScreen ContextAction key sink persists after respawn
+-- Force-unbind "DeathScreenBlockOtherGuiInputs" on CharacterAdded
+-- so 1-9 hotbar keys work again after dying
+-- ============================================================
+do
+    local CAS = game:GetService("ContextActionService")
+    trackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+        -- give the death screen a moment to hide itself normally first
+        task.delay(1, function()
+            CAS:UnbindAction("DeathScreenBlockOtherGuiInputs")
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if pg then
+                pg:SetAttribute("MouseUnlock_DeathScreen", false)
+            end
+            LocalPlayer:SetAttribute("DeathScreenActive", false)
+        end)
+    end))
 end
 
 return ApexEngine
