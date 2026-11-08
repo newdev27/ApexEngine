@@ -9,6 +9,8 @@ if getgenv().apexengine_loaded then
 end
 getgenv().apexengine_loaded = true
 
+-- AC Bypass skipped (not needed for this executor)
+
 local _runtimeConnections = {}
 local function trackConnection(c)
     _runtimeConnections[#_runtimeConnections + 1] = c
@@ -457,7 +459,6 @@ function ApexEngine:CreateWindow(cfg)
     })
     Window.Gui = gui
     local blur = New("BlurEffect", { Size=0, Name="ApexEngineBlur", Parent=Lighting })
-    Tween(blur, 0.4, { Size=cfg.Blur or 12 })
 
     local main = New("Frame", {
         Name="Main", Size=UDim2.fromOffset(690,500),
@@ -864,7 +865,7 @@ function ApexEngine:CreateWindow(cfg)
                         if listening and i.UserInputType==Enum.UserInputType.Keyboard then
                             listening=false; key=(i.KeyCode~=Enum.KeyCode.Escape) and i.KeyCode or nil
                             b.Text=key and key.Name or "None"; flag(o.Flag,key)
-                        elseif not gp and key and i.KeyCode==key and o.Callback then
+                        elseif not gp and not listening and key and i.KeyCode==key and o.Callback then
                             task.spawn(o.Callback,key)
                         end
                     end)
@@ -948,24 +949,32 @@ local ConfigTab  = Window:AddTab("Configs", Icons.config)
 local CombatPage = CombatTab:AddSubtab("Main")
 
 -- Left: Aim Assistance
-local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
-aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
-aimG:AddKeybind({  Name="SA Toggle Key", Default=Enum.KeyCode.Q, Flag="sa_key", Callback=function() ApexEngine.Flags["sa_enabled"] = not ApexEngine.Flags["sa_enabled"] end })
+local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 290)
+aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled", Callback=function(v)
+    if not v then
+        -- clear lock state when SA is toggled off
+        -- (variables live in the combat do-block closure, cleared via flags)
+        ApexEngine.Flags["_sa_clear_lock"] = true
+    end
+end })
+aimG:AddKeybind({  Name="SA Toggle Key", Default=Enum.KeyCode.Q, Flag="sa_key", Callback=function() ApexEngine.Flags["sa_enabled"] = not (ApexEngine.Flags["sa_enabled"] == true) end })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
-aimG:AddSeparator()
-
+aimG:AddSlider({   Name="Bullet Speed",  Min=100,Max=2000,Default=500,Suffix="s",Flag="sa_bulletspeed" })
+aimG:AddCheckbox({ Name="Wall Check",    Default=true,  Flag="sa_wallcheck" })
+aimG:AddCheckbox({ Name="Smooth Aim",    Default=false, Flag="sa_smooth" })
+aimG:AddSlider({   Name="Smooth Factor", Min=1,Max=20,Default=6,Flag="sa_smoothfactor" })
+aimG:AddCheckbox({ Name="Lock Target",   Default=false, Flag="sa_lock" })
 
 -- Left: Aimbot
-local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
+local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 210)
 abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
-abG:AddKeybind({  Name="AB Toggle Key", Default=Enum.KeyCode.E, Flag="ab_key", Callback=function() ApexEngine.Flags["ab_enabled"] = not ApexEngine.Flags["ab_enabled"] end })
+abG:AddKeybind({  Name="AB Toggle Key", Default=Enum.KeyCode.E, Flag="ab_key", Callback=function() ApexEngine.Flags["ab_enabled"] = not (ApexEngine.Flags["ab_enabled"] == true) end })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
-abG:AddSeparator()
 
 
 -- Right: Misc Combat
@@ -982,16 +991,14 @@ miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
 miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Instant Equip",   Default=false, Flag="instant_equip" })
+miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Hammer Rapid Hit", Default=false, Flag="hammer_rapid" })
+miscG:AddSlider({   Name="Hit Rate",         Min=1, Max=20, Default=5, Flag="hammer_rapid_rate" })
+miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
 miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
 miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
-
--- Right: Snapline
-local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
-snapG:AddCheckbox({ Name="Enabled",       Default=false, Flag="snap_enabled" })
-snapG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,200,0), Flag="snap_col" })
-snapG:AddDropdown({ Name="Origin",        Items={"Bottom","Center"}, Default="Bottom", Flag="snap_origin" })
-snapG:AddSlider({   Name="Thickness",     Min=1,Max=5,Default=1,Flag="snap_thick" })
 
 -- Right: Target Lines
 local tlineG = CombatPage:AddGroup("Target Lines", Icons.dagger, "Right", 260)
@@ -1102,7 +1109,7 @@ moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" }
 moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
-moveG:AddKeybind({  Name="Fly Toggle Key",  Default=Enum.KeyCode.G, Flag="m_fly_key", Callback=function() ApexEngine.Flags["m_fly"] = not ApexEngine.Flags["m_fly"] end })
+moveG:AddKeybind({  Name="Fly Toggle Key",  Default=Enum.KeyCode.G, Flag="m_fly_key", Callback=function() ApexEngine.Flags["m_fly"] = not (ApexEngine.Flags["m_fly"] == true) end })
 moveG:AddSlider({   Name="Fly Speed",       Min=1,Max=100,Default=20,Flag="m_flyspeed" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Spectate",        Default=false, Flag="m_spectate" })
@@ -1125,18 +1132,18 @@ end })
 local miscPG = PlayerPage:AddGroup("Misc", Icons.hammer, "Right", 280)
 miscPG:AddCheckbox({ Name="Free Cam",       Default=false, Flag="m_freecam" })
 miscPG:AddKeybind({  Name="Free Cam Key",   Default=Enum.KeyCode.V, Flag="m_freecam_key", Callback=function()
-    ApexEngine.Flags["m_freecam"] = not ApexEngine.Flags["m_freecam"]
+    ApexEngine.Flags["m_freecam"] = not (ApexEngine.Flags["m_freecam"] == true)
 end })
 miscPG:AddSlider({   Name="Cam Speed",      Min=10, Max=200, Default=50, Flag="m_freecam_speed" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="No Clip",        Default=false, Flag="m_noclip" })
-miscPG:AddKeybind({  Name="NC Toggle Key",  Default=Enum.KeyCode.N, Flag="m_noclip_key", Callback=function() ApexEngine.Flags["m_noclip"] = not ApexEngine.Flags["m_noclip"] end })
+miscPG:AddKeybind({  Name="NC Toggle Key",  Default=Enum.KeyCode.N, Flag="m_noclip_key", Callback=function() ApexEngine.Flags["m_noclip"] = not (ApexEngine.Flags["m_noclip"] == true) end })
 miscPG:AddCheckbox({ Name="Third Person",   Default=false, Flag="m_thirdperson" })
-miscPG:AddKeybind({  Name="TP Toggle Key",  Default=Enum.KeyCode.T, Flag="m_thirdperson_key", Callback=function() ApexEngine.Flags["m_thirdperson"] = not ApexEngine.Flags["m_thirdperson"] end })
+miscPG:AddKeybind({  Name="TP Toggle Key",  Default=Enum.KeyCode.T, Flag="m_thirdperson_key", Callback=function() ApexEngine.Flags["m_thirdperson"] = not (ApexEngine.Flags["m_thirdperson"] == true) end })
 miscPG:AddSlider({   Name="TP Distance",    Min=5,Max=30,Default=12,Flag="m_thirdperson_dist" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="X-Ray",          Default=false, Flag="m_xray" })
-miscPG:AddKeybind({  Name="XR Toggle Key",  Default=Enum.KeyCode.X, Flag="m_xray_key", Callback=function() ApexEngine.Flags["m_xray"] = not ApexEngine.Flags["m_xray"] end })
+miscPG:AddKeybind({  Name="XR Toggle Key",  Default=Enum.KeyCode.X, Flag="m_xray_key", Callback=function() ApexEngine.Flags["m_xray"] = not (ApexEngine.Flags["m_xray"] == true) end })
 miscPG:AddColorPicker({ Name="X-Ray Color", Default=Color3.fromRGB(255, 80, 200), Flag="m_xray_col" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="Zoom",           Default=false, Flag="m_zoom" })
@@ -1202,151 +1209,6 @@ end })
 cfgLeft:AddButton({ Name="Delete", Callback=function()
     local name=ApexEngine.Flags["cfg_sel"]; if not name or name=="" then return end
     pcall(function() delfile(CFG_FOLDER.."/"..name..".json") end); cfgDrop:Refresh(listConfigs())
-end })
-
--- ── Key Manager group (right side of Configs tab) ──────────
-local KEYGEN_URL = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/KeyGenerator.lua"
-
--- Lazy-load KeyGenerator module once
-local _kg = nil
-local function getKG()
-    if _kg then return _kg end
-    local ok, result = pcall(function()
-        return loadstring(game:HttpGet(KEYGEN_URL .. "?t=" .. os.time()))()
-    end)
-    if ok and type(result) == "table" then _kg = result; return _kg end
-    warn("[ApexEngine] Failed to load KeyGenerator: " .. tostring(result))
-    return nil
-end
-
-local keyMgrG = ConfigPage:AddGroup("Key Manager", Icons.crown, "Right", 340)
-
--- Caller username input (TextBox row)
-local _callerName = ""
-do
-    local r = (function()
-        -- inline row since we're outside AddGroup's closure; use AddLabel as spacer then overlay a TextBox
-        -- We use AddButton trick: store ref via Label + manual TextBox
-        return nil
-    end)()
-end
-
--- We need a TextBox for caller name and target name — use AddLabel + manual approach
--- Since AddGroup only exposes AddCheckbox/Slider/etc, we use two AddButton callbacks
--- that read from a shared _callerName / _targetName updated via a TextBox we inject.
-
--- Inject caller TextBox via AddLabel (returns the label; we replace it)
-local _callerLbl  = keyMgrG:AddLabel("Caller: (not set)")
-local _targetLbl  = keyMgrG:AddLabel("Target: (not set)")
-local _statusLbl  = keyMgrG:AddLabel("")
-
-local _callerName = ""
-local _targetName = ""
-
--- Tier dropdown
-local _tierDrop = keyMgrG:AddDropdown({
-    Name  = "Tier",
-    Items = { "free", "1day", "weekly", "monthly", "yearly", "lifetime", "1hr", "1min" },
-    Default = "free",
-    Flag  = "kg_tier",
-})
-
--- Amount slider
-keyMgrG:AddSlider({ Name="Amount", Min=1, Max=10, Default=1, Flag="kg_amount" })
-
--- Set Caller button — opens a TextBox prompt via a ScreenGui overlay
-local function openNamePrompt(title, callback)
-    local pg = GetParentGui()
-    local overlay = New("ScreenGui", { Name="ApexPrompt", ResetOnSpawn=false,
-        ZIndexBehavior=Enum.ZIndexBehavior.Sibling, IgnoreGuiInset=true,
-        DisplayOrder=9999, Parent=pg })
-    New("Frame", { Size=UDim2.fromScale(1,1), BackgroundColor3=Color3.new(0,0,0),
-        BackgroundTransparency=0.55, BorderSizePixel=0, Parent=overlay })
-    local box = New("Frame", { AnchorPoint=Vector2.new(0.5,0.5),
-        Position=UDim2.fromScale(0.5,0.5), Size=UDim2.fromOffset(320,110),
-        BackgroundColor3=Theme.WindowBg, BorderSizePixel=0, Parent=overlay },
-        { Corner(10), Stroke() })
-    Label({ Text=title, Font=Theme.FontBold, TextSize=13,
-        Size=UDim2.new(1,-20,0,20), Position=UDim2.fromOffset(10,10), Parent=box })
-    local tb = New("TextBox", { BackgroundColor3=Theme.FrameInactive, BorderSizePixel=0,
-        ClearTextOnFocus=false, Font=Theme.Font, TextSize=12,
-        PlaceholderText="type name...", PlaceholderColor3=Theme.TextDisabled,
-        Text="", TextColor3=Theme.Text,
-        Size=UDim2.new(1,-20,0,30), Position=UDim2.fromOffset(10,38), Parent=box },
-        { Corner(6), Stroke(Theme.Border,0.6) })
-    New("UIPadding", { PaddingLeft=UDim.new(0,8), Parent=tb })
-    local ok = New("TextButton", { BackgroundColor3=Theme.Accent, AutoButtonColor=false,
-        Text="Confirm", Font=Theme.FontBold, TextSize=12,
-        TextColor3=Color3.fromRGB(8,8,8),
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.fromOffset(10,76), Parent=box }, { Corner(6) })
-    local cancel = New("TextButton", { BackgroundColor3=Theme.Button, AutoButtonColor=false,
-        Text="Cancel", Font=Theme.Font, TextSize=12, TextColor3=Theme.TextDisabled,
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.new(0.52,0,0,76), Parent=box }, { Corner(6) })
-    local function close(val)
-        overlay:Destroy()
-        if val and val ~= "" then callback(val) end
-    end
-    ok.MouseButton1Click:Connect(function() close(tb.Text:match("^%s*(.-)%s*$")) end)
-    cancel.MouseButton1Click:Connect(function() overlay:Destroy() end)
-    tb.FocusLost:Connect(function(enter) if enter then close(tb.Text:match("^%s*(.-)%s*$")) end end)
-    task.defer(function() tb:CaptureFocus() end)
-end
-
-keyMgrG:AddButton({ Name="Set Caller (your name)", Callback=function()
-    openNamePrompt("Enter your username (caller):", function(name)
-        _callerName = name:lower()
-        _callerLbl.Text = "Caller: " .. _callerName
-    end)
-end })
-
-keyMgrG:AddButton({ Name="Set Target (recipient)", Callback=function()
-    openNamePrompt("Enter recipient username:", function(name)
-        _targetName = name:lower()
-        _targetLbl.Text = "Target: " .. _targetName
-    end)
-end })
-
-keyMgrG:AddSeparator()
-
--- genkey button
-keyMgrG:AddButton({ Name="Generate Key", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    local tier   = ApexEngine.Flags["kg_tier"] or "free"
-    local amount = ApexEngine.Flags["kg_amount"] or 1
-    local note   = _targetName ~= "" and ("for " .. _targetName) or "manual"
-    local result = kg.genkey(_callerName, tier, note, amount)
-    if result then
-        local keys = {}
-        for k in pairs(result) do keys[#keys+1] = k end
-        _statusLbl.Text = "✓ " .. #keys .. "x " .. tier
-        -- copy first key to clipboard
-        local copy = setclipboard or toclipboard
-        if copy and #keys == 1 then pcall(copy, keys[1]) end
-    else
-        _statusLbl.Text = "Denied or invalid tier."
-    end
-end })
-
--- Grant permission button
-keyMgrG:AddButton({ Name="Grant Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.grantPermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Granted: " .. _targetName) or "Denied."
-end })
-
--- Revoke permission button
-keyMgrG:AddButton({ Name="Revoke Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.revokePermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Revoked: " .. _targetName) or "Denied."
 end })
 
 local cfgRight = ConfigPage:AddGroup("Interface", Icons.hammer, "Right", 210)
@@ -1471,49 +1333,37 @@ do
     local _origGlobalShadows = Lighting.GlobalShadows
     local _origClockTime     = Lighting.ClockTime
 
-    -- Restore lighting when features turn off
-    local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime = false,false,false,false,false
+    -- Restore lighting when features turn off + No Trees watcher — single merged connection
+    local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime, _prevNoTrees = false,false,false,false,false,false
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        -- Fullbright restore
         if _prevFullbright and not flags["w_fullbright"] and not flags["w_ambient"] then
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
         end
         _prevFullbright = flags["w_fullbright"] == true
-        -- Ambient restore
         if _prevAmbient and not flags["w_ambient"] and not flags["w_fullbright"] then
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
         end
         _prevAmbient = flags["w_ambient"] == true
-        -- Fog restore
         if _prevFog and not flags["w_nofog"] then
             Lighting.FogEnd=_origFogEnd; Lighting.FogStart=_origFogStart
         end
         _prevFog = flags["w_nofog"] == true
-        -- Shadows restore
         if _prevShadows and not flags["w_noshadows"] then
             Lighting.GlobalShadows=_origGlobalShadows
         end
         _prevShadows = flags["w_noshadows"] == true
-        -- Time restore
         if _prevTime and not flags["w_forcetime"] then
             Lighting.ClockTime=_origClockTime
         end
         _prevTime = flags["w_forcetime"] == true
-    end))
-
-    -- No Trees: unparent existing + watch ChildAdded
-    local _noTreesConn = nil
-    local _hiddenTrees = {} -- {obj, originalParent}
-
-    local function hideObj(obj, parent)
-        if obj.Parent then
-            _hiddenTrees[#_hiddenTrees+1] = {obj, obj.Parent}
-            obj.Parent = nil
+        -- No Trees
+        local curNoTrees = flags["w_notrees"] == true
+        if curNoTrees ~= _prevNoTrees then
+            _prevNoTrees = curNoTrees
+            applyNoTrees(curNoTrees)
         end
-    end
-
-    local function applyNoTrees(enabled)
+    end))
         if enabled then
             local sh = workspace:FindFirstChild("SpawnedHarvestables")
             if sh then
@@ -1547,55 +1397,48 @@ do
     end
 
     local _prevNoTrees = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local cur = ApexEngine.Flags["w_notrees"] == true
-        if cur ~= _prevNoTrees then
-            _prevNoTrees = cur
-            applyNoTrees(cur)
+    trackConnec
+    local _noTreesConn = nil
+    local _hiddenTrees = {}
+    local function hideObj(obj)
+        if obj.Parent then
+            _hiddenTrees[#_hiddenTrees+1] = {obj, obj.Parent}
+            obj.Parent = nil
         end
-    end))
-end
-
--- Auto load config
-if ApexEngine.Flags["cfg_autoload"] then
-    local sel=ApexEngine.Flags["cfg_sel"]
-    if sel and sel~="" then pcall(function() loadConfig(sel) end) end
-end
-
--- ============================================================
--- WORLD ESP LOGIC
--- ============================================================
-do
-    local worldEspGui = Instance.new("ScreenGui")
-    worldEspGui.Name = "ApexWorldESP"
-    worldEspGui.ResetOnSpawn = false
-    worldEspGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    worldEspGui.IgnoreGuiInset = true
-    worldEspGui.Parent = GetParentGui()
-
-    -- label pool: id -> { bg, lbl }
-    local _wlabels = {}
-
-    local function getLabel(id, col)
-        if not _wlabels[id] then
-            local bg = Instance.new("Frame")
-            bg.BackgroundColor3 = Color3.new(0,0,0)
-            bg.BackgroundTransparency = 0.5
-            bg.BorderSizePixel = 0
-            bg.AutomaticSize = Enum.AutomaticSize.XY
-            bg.Parent = worldEspGui
-            local lbl = Instance.new("TextLabel")
-            lbl.BackgroundTransparency = 1
-            lbl.Font = Enum.Font.GothamBold
-            lbl.TextSize = 11
-            lbl.TextStrokeTransparency = 0.4
-            lbl.TextStrokeColor3 = Color3.new(0,0,0)
-            lbl.AutomaticSize = Enum.AutomaticSize.XY
-            lbl.Parent = bg
-            _wlabels[id] = { bg = bg, lbl = lbl }
+    end
+    local function applyNoTrees(enabled)
+        if enabled then
+            local sh = workspace:FindFirstChild("SpawnedHarvestables")
+            if sh then
+                for _,v in ipairs(sh:GetChildren()) do
+                    local tf = v:GetAttribute("TemplateFolder")
+                    if tf=="Trees" or tf=="PineTrees" then
+                        local leaves = v:FindFirstChild("Leaves")
+                        if leaves then hideObj(leaves) end
+                    end
+                end
+                if not _noTreesConn then
+                    _noTreesConn = sh.ChildAdded:Connect(function(v)
+                        if not ApexEngine.Flags["w_notrees"] then return end
+                        local tf = v:GetAttribute("TemplateFolder")
+                        if tf=="Trees" or tf=="PineTrees" then
+                            task.defer(function()
+                                local leaves = v:FindFirstChild("Leaves")
+                                if leaves then hideObj(leaves) end
+                            end)
+                        end
+                    end)
+                end
+            end
+        else
+            if _noTreesConn then _noTreesConn:Disconnect(); _noTreesConn=nil end
+            for _,entry in ipairs(_hiddenTrees) do
+                pcall(function() entry[1].Parent = entry[2] end)
+            end
+            table.clear(_hiddenTrees)
         end
-        local e = _wlabels[id]
-        e.lbl.TextColor3 = col or Color3.new(1,1,1)
+    end
+r Color3.new(1,1,1)
         return e
     end
 
@@ -1703,15 +1546,21 @@ do
     local GunFire = nil
 
     -- ── Shared helpers ────────────────────────────────────────
+    -- Per-frame enemy cache: rebuilt once per RenderStepped, reused by AB + SA + ESP
+    local _enemyCache = {}
+    local _enemyCacheFrame = -1
     local function getEnemies()
-        local list = {}
-        local myChar = LocalPlayer.Character
+        local cf = RunService.RenderStepped:Wait= _enemyCacheFrame then return _enemyCache end
+        _enemyCacheFrame = now
+        local list = _enemyCache
+        table.clear(list)
         for _, p in ipairs(Players:GetPlayers()) do
             if p == LocalPlayer then continue end
             local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if char and hum and hum.Health > 0 and root then
+            if not char then continue end
+            local hum  = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and root then
                 list[#list+1] = { player=p, char=char, hum=hum, root=root }
             end
         end
@@ -1722,22 +1571,24 @@ do
         return char:FindFirstChild(partName) or char:FindFirstChild("HumanoidRootPart")
     end
 
-    local function screenDist(worldPos)
-        local cam = workspace.CurrentCamera
+    -- Reuse a single camera reference per call site
+    local function screenDistSq(cam, worldPos)
         local sp, onScreen = cam:WorldToViewportPoint(worldPos)
         if not onScreen or sp.Z <= 0 then return math.huge end
         local vp = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
+        local dx, dy = sp.X - vp.X*0.5, sp.Y - vp.Y*0.5
+        return dx*dx + dy*dy
     end
 
     local function getClosestEnemy(partName, fovPx)
-        local best, bestDist = nil, fovPx or math.huge
+        local cam = workspace.CurrentCamera
+        local fovSq = (fovPx or math.huge)^2
+        local best, bestSq = nil, fovSq
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
-                local d = screenDist(part.Position)
-                if d < bestDist then bestDist = d; best = e end
+                local dsq = screenDistSq(cam, part.Position)
+                if dsq < bestSq then bestSq = dsq; best = e end
             end
         end
         return best
@@ -1748,6 +1599,7 @@ do
     fovGui.Name = "ApexFOV"
     fovGui.ResetOnSpawn = false
     fovGui.IgnoreGuiInset = true
+    fovGui.DisplayOrder = 10
     fovGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     fovGui.Parent = GetParentGui()
 
@@ -1768,11 +1620,12 @@ do
 
     trackConnection(RunService.RenderStepped:Connect(function()
         local flags = ApexEngine.Flags
-        local showFov = (flags["sa_enabled"] or flags["ab_enabled"]) == true
-        if showFov then
+        local saOn = flags["sa_enabled"] == true
+        local abOn = flags["ab_enabled"] == true
+        if saOn or abOn then
             local cam = workspace.CurrentCamera
             local vp  = cam.ViewportSize
-            local fov = flags["sa_enabled"] and (flags["sa_fov"] or 80) or (flags["ab_fov"] or 80)
+            local fov = saOn and (flags["sa_fov"] or 80) or (flags["ab_fov"] or 80)
             fovCircle.Position = UDim2.fromOffset(vp.X/2, vp.Y/2)
             fovCircle.Size     = UDim2.fromOffset(fov*2, fov*2)
             fovCircle.Visible  = true
@@ -1794,7 +1647,90 @@ do
             or char:FindFirstChild("HumanoidRootPart")
     end
 
-    -- Silent Aim
+    -- ── Silent Aim state ─────────────────────────────────────
+    local _saLocked      = nil   -- locked target player
+    local _saLockedPart  = nil   -- locked target part
+    local _saLastDir     = nil   -- last redirected direction (for smooth aim)
+
+    -- Hitchance: use a deterministic shuffle pool so distribution is exact
+    local _saHitPool = {}
+    local _saHitIdx  = 0
+    local function saHitRoll(chance)
+        -- rebuild pool when exhausted
+        if _saHitIdx >= #_saHitPool then
+            _saHitPool = {}
+            local slots = 100
+            local hits  = math.clamp(math.floor(chance + 0.5), 0, slots)
+            for i = 1, hits  do _saHitPool[i] = true  end
+            for i = hits+1, slots do _saHitPool[i] = false end
+            -- Fisher-Yates shuffle
+            for i = slots, 2, -1 do
+                local j = math.random(1, i)
+                _saHitPool[i], _saHitPool[j] = _saHitPool[j], _saHitPool[i]
+            end
+            _saHitIdx = 0
+        end
+        _saHitIdx += 1
+        return _saHitPool[_saHitIdx]
+    end
+
+    -- Wall check: raycast from camera to target, skip character parts
+    local _saRayParams = RaycastParams.new()
+    _saRayParams.FilterType = Enum.RaycastFilterType.Exclude
+    -- Cache the filter list; only rebuild when player count changes
+    local _saFilterCache = {}
+    local _saFilterCount = -1
+    local function saHasLOS(origin, targetPos)
+        local dir = targetPos - origin
+        local plist = Players:GetPlayers()
+        if #plist ~= _saFilterCount then
+            _saFilterCount = #plist
+            table.clear(_saFilterCache)
+            for _, p in ipairs(plist) do
+                if p.Character then _saFilterCache[#_saFilterCache+1] = p.Character end
+            end
+            if LocalPlayer.Character then _saFilterCache[#_saFilterCache+1] = LocalPlayer.Character end
+            _saRayParams.FilterDescendantsInstances = _saFilterCache
+        end
+        return workspace:Raycast(origin, dir * 0.99, _saRayParams) == nil
+    end
+
+    -- Priority score: lower = better target
+    -- Weights: screen distance (primary), health (secondary), world distance (tertiary)
+    local function saScore(screenDist, health, worldDist)
+        return screenDist * 1.0 + (health / 100) * 15 + worldDist * 0.01
+    end
+
+    -- Pick best SA target with full scoring
+    local function saPickTarget(partName, fovPx, wallCheck, origin)
+        local cam    = workspace.CurrentCamera
+        local vp     = cam.ViewportSize
+        local cx, cy = vp.X * 0.5, vp.Y * 0.5
+        local fovSq  = fovPx * fovPx
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local best, bestScore, bestPart, bestPredicted = nil, math.huge, nil, nil
+        local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 500
+        for _, e in ipairs(getEnemies()) do
+            local part = getR6Part(e.char, partName)
+            if not part then continue end
+            local vel        = e.root.AssemblyLinearVelocity
+            local travelTime = (part.Position - origin).Magnitude / bulletSpeed
+            local predicted  = part.Position + vel * travelTime
+            local sp, onSc   = cam:WorldToViewportPoint(predicted)
+            if not onSc or sp.Z <= 0 then continue end
+            local dx, dy = sp.X - cx, sp.Y - cy
+            local sdSq = dx*dx + dy*dy
+            if sdSq > fovSq then continue end
+            if wallCheck and not saHasLOS(origin, predicted) then continue end
+            local worldDist = myRoot and (e.root.Position - myRoot.Position).Magnitude or 0
+            local score = math.sqrt(sdSq) + (e.hum.Health * 0.15) + worldDist * 0.01
+            if score < bestScore then
+                bestScore = score; best = e; bestPart = part; bestPredicted = predicted
+            end
+        end
+        return best, bestPart, bestPredicted
+    end
+
     local rs = game:GetService("ReplicatedStorage")
     task.spawn(function()
         local gf = rs:WaitForChild("GunFire", 15)
@@ -1812,48 +1748,70 @@ do
     local function drawBulletTracer(fromWorld, toWorld)
         local cam = workspace.CurrentCamera
         local vp  = cam.ViewportSize
-        -- always draw from screen center so it looks correct on screen
         local ax, ay = vp.X / 2, vp.Y / 2
-        local spB = cam:WorldToViewportPoint(toWorld)
-        if spB.Z <= 0 then return end
+        local spB, onSc = cam:WorldToViewportPoint(toWorld)
+        if not onSc or spB.Z <= 0 then return end
         local bx, by = spB.X, spB.Y
         local dx, dy = bx - ax, by - ay
         local len = math.sqrt(dx*dx + dy*dy)
-        if len < 1 then return end
+        if len < 2 then return end
         local line = Instance.new("Frame")
         line.BackgroundColor3 = ApexEngine.Flags["tracer_col"] or Color3.fromRGB(255,80,80)
         line.BorderSizePixel = 0
-        line.AnchorPoint = Vector2.new(0, 0.5)
-        line.Position = UDim2.fromOffset(ax, ay)
-        line.Size = UDim2.fromOffset(len, 1)
+        -- midpoint anchor so rotation is correct in both directions
+        line.AnchorPoint = Vector2.new(0.5, 0.5)
+        line.Position = UDim2.fromOffset((ax + bx) / 2, (ay + by) / 2)
+        line.Size = UDim2.fromOffset(len, 2)
         line.Rotation = math.deg(math.atan2(dy, dx))
+        line.ZIndex = 10
         line.Parent = _tracerGui
-        game:GetService("Debris"):AddItem(line, 0.3)
+        task.delay(0.25, function() if line and line.Parent then line:Destroy() end end)
     end
 
     local _rapidFireActive = false
 
-    local _saHooked = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        if _saHooked or not GunFire or not hookfunction then return end
-        _saHooked = true
-        local orig = GunFire.FireServer
-        hookfunction(orig, newcclosure(function(self, ...)
+    -- Hook ALL RemoteEvent:FireServer calls via hookmetamethod so we catch every gun
+    -- regardless of which remote they use. The reference confirms the game uses GunFire
+    -- but we also catch any remote that passes 2+ Vector3 args as a fallback.
+    if hookmetamethod and newcclosure then
+        local _origNamecall = hookmetamethod(gam        local _origNamecall
+        _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            if method ~= "FireServer" then return _origNamecall(self, ...) end
+            if not self:IsA("RemoteEvent") then return _origNamecall(self, ...) end
+
+            local name = self.Name
+            local isGunFire = name == "GunFire" or name == "Fire" or name == "Shoot"
+                or name == "BulletFire" or name == "ShootGun" or name == "FireGun"
+                or name == "GunShoot" or name == "WeaponFire" or name == "ShootEvent"
+                or name == "FireWeapon" or name == "FireBullet" or name == "BulletShoot"
+                or name == "ShotFired" or name == "PlayerShoot" or name == "ClientFire"
+            if not isGunFire then
+                -- fallback: check for 2+ Vector3 args
+                local a = {...}
+                local v3c = 0
+                for i = 1, math.min(#a, 6) do
+                    if typeof(a[i]) == "Vector3" then v3c += 1 end
+                    if v3c >= 2 then isGunFire = true; break end
+                end
+            end
+            if not isGunFire then return _origNamecall(self, ...) end
+
             local args = {...}
             local flags = ApexEngine.Flags
-            local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
+            local cam = workspace.CurrentCamera
+            local origin = (typeof(args[1]) == "Vector3") and args[1] or cam.CFrame.Position
 
-            -- Always Headshot / Instant Bullet: find closest head in FOV, redirect
+            -- Always Headshot / Instant Bullet
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
-                local cam = workspace.CurrentCamera
-                local vp  = cam.ViewportSize
+                local vp = cam.ViewportSize
                 local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-                local fovR = flags["sa_fov"] or 80
-                local bestDist, bestHead = fovR, nil
+                -- no FOV cap: always headshot works on any visible enemy regardless of crosshair distance
+                local bestDist, bestHead = math.huge, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
+                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
                         local head = p.Character:FindFirstChild("Head")
-                        if head then
+                        if hum and hum.Health > 0 and head then
                             local sp, onSc = cam:WorldToViewportPoint(head.Position)
                             if onSc and sp.Z > 0.01 then
                                 local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
@@ -1865,56 +1823,104 @@ do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- move muzzle to just behind target so bullet arrives instantly
                         local delta = origin - targetPos
                         local muzzle = delta.Magnitude > 0.01 and (targetPos + delta.Unit * 2) or (targetPos + Vector3.new(0,0,2))
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = muzzle end
                         origin = muzzle
                     end
-                    local dir = (targetPos - origin).Unit
-                    if #args >= 3 and typeof(args[3]) == "Vector3" then args[3] = dir end
-                    if flags["bullet_tracers"] then
-                        task.spawn(drawBulletTracer, origin, targetPos)
+                    local dir = (targetPos - origin)
+                    if dir.Magnitude > 0.001 then
+                        dir = dir.Unit
+                        -- find args[3] slot: first Vector3 arg after args[1] that isn't origin
+                        for i = 2, #args do
+                            if typeof(args[i]) == "Vector3" then
+                                args[i] = dir; break
+                            end
+                        end
                     end
+                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
                     if flags["rapid_fire"] and not _rapidFireActive then
-                        local result = orig(self, table.unpack(args))
+                        local result = _origNamecall(self, table.unpack(args))
                         _rapidFireActive = true
                         task.spawn(function()
-                            local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                            for _ = 1, extra do
+                            for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                                 task.wait()
-                                task.spawn(function() orig(self, table.unpack(args)) end)
+                                task.spawn(function() _origNamecall(self, table.unpack(args)) end)
                             end
                             _rapidFireActive = false
                         end)
                         return result
                     end
-                    return orig(self, table.unpack(args))
+                    return _origNamecall(self, table.unpack(args))
                 end
             end
 
-            -- Silent Aim (toggle, improved: velocity prediction + closest in FOV)
+            -- Silent Aim
             if flags["sa_enabled"] then
-                if math.random(100) <= (flags["sa_hitchance"] or 100) then
-                    local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
-                    if target then
-                        local part = getR6Part(target.char, partName)
-                        if part and typeof(origin) == "Vector3" then
-                            local vel = target.root.AssemblyLinearVelocity
-                            local dist = (part.Position - origin).Magnitude
-                            local travelTime = dist / 500
-                            local predicted = part.Position + vel * travelTime
-                            args[3] = (predicted - origin).Unit
-                            if flags["bullet_tracers"] then
-                                task.spawn(drawBulletTracer, origin, predicted)
+                local partName  = flags["sa_part"]      or "Head"
+                local fovPx     = flags["sa_fov"]       or 80
+                local hitchance = flags["sa_hitchance"] or 100
+                local wallCheck = flags["sa_wallcheck"] ~= false
+                local doSmooth  = flags["sa_smooth"]    == true
+                local doLock    = flags["sa_lock"]      == true
+
+                -- Validate lock: clear if target died/left or SA was toggled off
+                if flags["_sa_clear_lock"] then
+                    _saLocked = nil; _saLockedPart = nil; _saLastDir = nil
+                    ApexEngine.Flags["_sa_clear_lock"] = nil
+                end
+                if doLock and _saLocked then
+                    local hum = _saLocked.Character and _saLocked.Character:FindFirstChildOfClass("Humanoid")
+                    if not hum or hum.Health <= 0 then
+                        _saLocked = nil; _saLockedPart = nil; _saLastDir = nil
+                    end
+                end
+
+                if saHitRoll(hitchance) then
+                    local target, part, predicted
+                    if doLock and _saLocked then
+                        -- re-resolve predicted pos for locked target
+                        local e = nil
+                        for _, en in ipairs(getEnemies()) do
+                            if en.player == _saLocked then e = en; break end
+                        end
+                        if e then
+                            part = getR6Part(e.char, partName)
+                            if part then
+                                local vel = e.root.AssemblyLinearVelocity
+                                local bulletSpeed = flags["sa_bulletspeed"] or 500
+                                local travelTime = (part.Position - origin).Magnitude / bulletSpeed
+                                predicted = part.Position + vel * travelTime
+                                target = e
                             end
                         end
+                    else
+                        target, part, predicted = saPickTarget(partName, fovPx, wallCheck, origin)
+                        if doLock and target then
+                            _saLocked = target.player; _saLockedPart = part
+                        end
+                    end
+
+                    if target and part and predicted then
+                        local rawDir = (predicted - origin).Unit
+                        local finalDir
+                        if doSmooth and _saLastDir then
+                            local factor = math.clamp((flags["sa_smoothfactor"] or 6) / 20, 0.05, 1)
+                            finalDir = (_saLastDir:Lerp(rawDir, factor)).Unit
+                        else
+                            finalDir = rawDir
+                        end
+                        _saLastDir = finalDir
+                        if #args >= 3 then args[3] = finalDir end
+                        if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, predicted) end
+                    else
+                        _saLastDir = nil
+                        if doLock then _saLocked = nil; _saLockedPart = nil end
                     end
                 end
             end
 
-            -- No Spread: replace direction with clean (target - origin).Unit
+            -- No Spread
             if flags["no_spread"] and not _rapidFireActive then
                 local target = getClosestEnemy(flags["sa_part"] or "Head", flags["sa_fov"] or 80)
                 if target then
@@ -1925,89 +1931,66 @@ do
                 end
             end
 
-            -- Bullet Tracers (no redirect, just visual)
-            if flags["bullet_tracers"] and typeof(args[3]) == "Vector3" then
+            -- Bullet Tracers standalone (only if SA didn't already draw one)
+            if flags["bullet_tracers"] and not flags["sa_enabled"] and typeof(args[3]) == "Vector3" then
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
                 params.FilterDescendantsInstances = {LocalPlayer.Character}
                 local hit = workspace:Raycast(origin, args[3] * 900, params)
-                local endPos = hit and hit.Position or (origin + args[3] * 900)
-                task.spawn(drawBulletTracer, origin, endPos)
+                task.spawn(drawBulletTracer, origin, hit and hit.Position or (origin + args[3] * 900))
             end
 
             -- Rapid Fire standalone
             if flags["rapid_fire"] and not _rapidFireActive then
-                local result = orig(self, table.unpack(args))
+                local result = _origNamecall(self, table.unpack(args))
                 _rapidFireActive = true
                 task.spawn(function()
-                    local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                    for _ = 1, extra do
+                    for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                         task.wait()
-                        task.spawn(function() orig(self, table.unpack(args)) end)
+                        task.spawn(function() _origNamecall(self, table.unpack(args)) end)
                     end
                     _rapidFireActive = false
                 end)
                 return result
             end
 
-            return orig(self, table.unpack(args))
+            return _origNamecall(self, table.unpack(args))
         end))
-    end))
-
-    -- No Recoil: hook BindToRenderStep to intercept recoil accumulator
-    -- Also applies MTAC counter-recoil pattern via camera offset
-    local MTAC_PATTERN = {
-        Vector2.new(0,0.0167),Vector2.new(0,0.02),Vector2.new(0.0133,0.02),
-        Vector2.new(-0.0133,0.0233),Vector2.new(0,0.0333),Vector2.new(0.0133,0.0233),
-        Vector2.new(-0.0067,0.02),Vector2.new(0,0.02),Vector2.new(0.0133,0.0167),
-        Vector2.new(0.0067,0.0267),Vector2.new(-0.0133,0.0267),Vector2.new(-0.0133,0.03),
-        Vector2.new(0.0067,0.0367),Vector2.new(0.0133,0.02),Vector2.new(0.02,0.04),
-        Vector2.new(-0.0333,0.0133),Vector2.new(-0.02,0.02),Vector2.new(0,0.0233),
-        Vector2.new(0.0133,0.0167),Vector2.new(0.0133,0.01),Vector2.new(0.02,0.0167),
-        Vector2.new(0,0.0167),Vector2.new(0.02,0.0133),Vector2.new(0.02,0.01),
-        Vector2.new(0.0133,0.0133),Vector2.new(0.0133,0.0033),Vector2.new(0.0333,0.0167),
-        Vector2.new(0.0267,0.01),Vector2.new(0.0267,0.0133),
-    }
-    local _mtacStep = 0
-    local _mtacLastFire = 0
-    local _origBind = RunService.BindToRenderStep
-    local _recoilHooked = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        if _recoilHooked or not hookfunction then return end
-        _recoilHooked = true
-        hookfunction(_origBind, newcclosure(function(self, name, priority, fn)
-            if type(name) == "string" and name:find("Recoil_") then
-                local wrapped = newcclosure(function(dt)
-                    if ApexEngine.Flags["no_recoil"] then return end
-                    fn(dt)
-                end)
-                return _origBind(self, name, priority, wrapped)
-            end
-            return _origBind(self, name, priority, fn)
-        end))
-    end))
-    -- MTAC counter-recoil: on each GunFire call, apply inverse of next pattern step to camera
-    -- We hook into the existing GunFire hook via a post-fire callback stored here
-    getgenv()._apexMtacFire = function()
-        if not ApexEngine.Flags["no_recoil"] then _mtacStep = 0; return end
-        local now = os.clock()
-        if now - _mtacLastFire > 0.5 then _mtacStep = 0 end
-        _mtacLastFire = now
-        local step = MTAC_PATTERN[(_mtacStep % #MTAC_PATTERN) + 1]
-        _mtacStep += 1
-        local cam = workspace.CurrentCamera
-        local cf = cam.CFrame
-        local rx, ry, rz = cf:ToEulerAnglesYXZ()
-        -- counter: subtract the recoil the gun would apply
-        cam.CFrame = CFrame.new(cf.Position)
-            * CFrame.Angles(0, ry - step.X, 0)
-            * CFrame.Angles(rx - step.Y, 0, 0)
     end
+
+    -- No Recoil
+    -- Layer 1: hook BindToRen    -- No Recoil (camera pitch-lock only)
+rity — catches recoil from guns already
+    -- equipped before the hook, and any executor that doesn't support hookfunction.
+    -- Widened threshold (0.15 rad ~8.6°) covers high-recoil weapons.
+    -- Also cancels any upward yaw-coupled recoil patterns (some guns kick diagonally).
+    local _nrPitch = 0
+    local _nrYaw   = 0
+    RunService:BindToRenderStep("ApexNoRecoil", Enum.RenderPriority.Last.Value, function()
+        local cam = workspace.CurrentCamera
+        local cf  = cam.CFrame
+        local rx, ry = cf:ToEulerAnglesYXZ()
+        if not ApexEngine.Flags["no_recoil"] then
+            _nrPitch = rx; _nrYaw = ry; return
+        end
+        local dp = rx - _nrPitch
+        local dyaw = math.abs(ry - _nrYaw)
+        -- cancel upward pitch jumps up to 0.15 rad with minimal yaw coupling (<0.05 rad)
+        -- this covers all known Brisk Survival gun recoil patterns
+        if dp < 0 and math.abs(dp) < 0.15 and dyaw < 0.05 then
+            cam.CFrame = CFrame.new(cf.Position)
+                * CFrame.Angles(0, _nrYaw, 0)
+                * CFrame.Angles(_nrPitch, 0, 0)
+        else
+            _nrPitch = rx; _nrYaw = ry
+        end
+    end)
 
     -- Aimbot (toggle, improved: distance-based velocity prediction)
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
+        local cam = workspace.CurrentCamera
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
@@ -2016,16 +1999,12 @@ do
         local targetPos = part.Position
         if flags["ab_predict"] then
             local vel = target.root.AssemblyLinearVelocity
-            local cam = workspace.CurrentCamera
             local dist = (targetPos - cam.CFrame.Position).Magnitude
-            local travelTime = math.clamp(dist / 500, 0, 0.3)
-            targetPos = targetPos + vel * travelTime
+            targetPos = targetPos + vel * math.clamp(dist / 500, 0, 0.3)
         end
-        local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
-        local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
-        local lerpFactor = math.clamp(1 - smooth, 0.02, 0.98)
+        local lerpFactor = math.clamp(1 - math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1), 0.02, 0.98)
         local w = cam.CFrame
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
     end))
@@ -2241,14 +2220,14 @@ do
         d.boxRight.BackgroundColor3 = col
     end
 
-    -- Draw tracer line from origin point to target screen pos
-    local function drawTracer(d, tx, ty, col, origin)
+    -- Draw tracer line from origin to target screen pos
+    local function drawTracer(d, tx, ty, col, originMode)
         local cam = workspace.CurrentCamera
         local vp  = cam.ViewportSize
         local ox, oy
-        if origin == "Center" then
+        if originMode == "Center" then
             ox, oy = vp.X/2, vp.Y/2
-        elseif origin == "Mouse" then
+        elseif originMode == "Mouse" then
             local mp = UserInputService:GetMouseLocation()
             ox, oy = mp.X, mp.Y
         else
@@ -2257,8 +2236,9 @@ do
         local dx, dy = tx - ox, ty - oy
         local len = math.sqrt(dx*dx + dy*dy)
         if len < 1 then d.tracer.Visible = false; return end
-        d.tracer.Position         = UDim2.fromOffset(ox, oy)
-        d.tracer.Size             = UDim2.fromOffset(len, 1)
+        d.tracer.AnchorPoint      = Vector2.new(0.5, 0.5)
+        d.tracer.Position         = UDim2.fromOffset((ox + tx) / 2, (oy + ty) / 2)
+        d.tracer.Size             = UDim2.fromOffset(len, 2)  -- 2px so it's actually visible
         d.tracer.Rotation         = math.deg(math.atan2(dy, dx))
         d.tracer.BackgroundColor3 = col
         d.tracer.Visible          = true
@@ -2331,16 +2311,15 @@ do
                 d.nameLabel.Visible = false
             end
 
-            -- Health bar (left side, fixed 4x60px, grows bottom-up)
+            -- Health bar: anchored to left edge of bounding box, scales with box height
             if flags["esp_health"] then
                 local hp  = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                 local r   = math.clamp(2*(1-hp), 0, 1)
                 local g   = math.clamp(2*hp, 0, 1)
                 local col = flags["esp_health_col"] or Color3.new(r, g, 0.1)
-                local barW, barH = 4, 60
-                local headSP2 = cam:WorldToViewportPoint(head.Position)
-                d.healthBg.Position = UDim2.fromOffset(headSP2.X - 20, headSP2.Y - barH/2)
-                d.healthBg.Size     = UDim2.fromOffset(barW, barH)
+                local barW = 4
+                d.healthBg.Position = UDim2.fromOffset(x1 - barW - 2, y1)
+                d.healthBg.Size     = UDim2.fromOffset(barW, bh)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
                 d.healthFill.Size   = UDim2.new(1, 0, hp, 0)
@@ -2365,12 +2344,20 @@ do
                 d.distLabel.Visible = false
             end
 
-            -- Tracer
+            -- Tracer: draw to the actual selected part's screen position
             if flags["esp_tracer"] then
-                local col    = flags["esp_tracer_col"] or Color3.fromRGB(0,180,255)
-                local origin = flags["esp_tracer_origin"] or "Bottom"
-                local cx     = (x1 + x2) / 2
-                drawTracer(d, cx, y2, col, origin)
+                local col       = flags["esp_tracer_col"]    or Color3.fromRGB(0,180,255)
+                local originMode = flags["esp_tracer_origin"] or "Bottom"
+                -- resolve the part to draw to (matches tl_part or falls back to root)
+                local tracerPartName = flags["tl_part"] or "Head"
+                local R6_TM = { Head="Head", Torso="Torso", ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm", ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg" }
+                local tracerPart = char:FindFirstChild(R6_TM[tracerPartName] or tracerPartName) or root
+                local tsp, tonSc = cam:WorldToViewportPoint(tracerPart.Position)
+                if tonSc and tsp.Z > 0 then
+                    drawTracer(d, tsp.X, tsp.Y, col, originMode)
+                else
+                    d.tracer.Visible = false
+                end
             else
                 d.tracer.Visible = false
             end
@@ -2428,7 +2415,8 @@ do
                             local len = math.sqrt(dx*dx+dy*dy)
                             if len >= 1 then
                                 local col = flags["tl_col"] or Color3.fromRGB(255,50,50)
-                                d.targetLine.Position         = UDim2.fromOffset(ox, oy)
+                                d.targetLine.AnchorPoint      = Vector2.new(0.5, 0.5)
+                                d.targetLine.Position         = UDim2.fromOffset((ox+tx)/2, (oy+ty)/2)
                                 d.targetLine.Size             = UDim2.fromOffset(len, 1)
                                 d.targetLine.Rotation         = math.deg(math.atan2(dy, dx))
                                 d.targetLine.BackgroundColor3 = col
@@ -2567,51 +2555,49 @@ do
 end
 
 -- ============================================================
--- X-RAY (transparent walls — full fill transparency, outline only)
+-- X-RAY (make world parts transparent so enemies show through walls)
 -- ============================================================
 do
-    local _xrayData = {} -- [player] = Highlight
+    local _xrayParts = {} -- [BasePart] = originalTransparency
+    local _xrayActive = false
 
-    local function ensureXray(p)
-        if _xrayData[p] then return end
-        local hl = Instance.new("Highlight")
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.FillTransparency = 1       -- fully transparent fill = see-through, no glow
-        hl.OutlineTransparency = 0
-        hl.Enabled = false
-        hl.Parent = game:GetService("CoreGui")
-        _xrayData[p] = hl
-    end
-
-    local function removeXray(p)
-        local hl = _xrayData[p]
-        if hl then pcall(function() hl:Destroy() end); _xrayData[p] = nil end
-    end
-
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        local enabled = flags["m_xray"] == true
-        local col = flags["m_xray_col"] or Color3.fromRGB(255, 80, 200)
+    local function applyXray()
+        -- make all non-character BaseParts in workspace transparent
+        local charSet = {}
         for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            ensureXray(p)
-            local hl = _xrayData[p]
-            local char = p.Character
-            if enabled and char then
-                hl.Adornee = char
-                hl.FillTransparency = 1   -- no fill, just outline so you can see through walls
-                hl.OutlineColor = col
-                hl.Enabled = true
-            else
-                hl.Enabled = false
+            if p.Character then charSet[p.Character] = true end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                -- skip character parts and terrain
+                local anc = obj:FindFirstAncestorOfClass("Model")
+                if anc and charSet[anc] then continue end
+                if not _xrayParts[obj] then
+                    _xrayParts[obj] = obj.Transparency
+                end
+                obj.Transparency = 0.85
             end
         end
-        for p in pairs(_xrayData) do
-            if not p.Parent then removeXray(p) end
+    end
+
+    local function removeXray()
+        for obj, orig in pairs(_xrayParts) do
+            pcall(function() obj.Transparency = orig end)
+        end
+        table.clear(_xrayParts)
+    end
+
+    local _prevXray = false
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local cur = ApexEngine.Flags["m_xray"] == true
+        if cur == _prevXray then return end
+        _prevXray = cur
+        if cur then
+            applyXray()
+        else
+            removeXray()
         end
     end))
-
-    Players.PlayerRemoving:Connect(removeXray)
 end
 
 -- ============================================================
@@ -2706,64 +2692,6 @@ do
 end
 
 -- ============================================================
--- SNAPLINE
--- ============================================================
-do
-    local snapGui = Instance.new("ScreenGui")
-    snapGui.Name = "ApexSnapline"
-    snapGui.ResetOnSpawn = false
-    snapGui.IgnoreGuiInset = true
-    snapGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    snapGui.Parent = GetParentGui()
-
-    local snapLine = Instance.new("Frame")
-    snapLine.BorderSizePixel = 0
-    snapLine.AnchorPoint = Vector2.new(0, 0.5)
-    snapLine.Visible = false
-    snapLine.Parent = snapGui
-
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["snap_enabled"] then snapLine.Visible = false; return end
-        -- find closest enemy
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best={sp=sp} end
-                end
-            end
-        end
-        if not best then snapLine.Visible=false; return end
-        local tx, ty = best.sp.X, best.sp.Y
-        local origin = flags["snap_origin"] or "Bottom"
-        local ox = cx
-        local oy = origin == "Center" and cy or vp.Y
-        local dx, dy = tx-ox, ty-oy
-        local len = math.sqrt(dx*dx+dy*dy)
-        if len < 1 then snapLine.Visible=false; return end
-        local col   = flags["snap_col"]   or Color3.fromRGB(255,200,0)
-        local thick = flags["snap_thick"] or 1
-        snapLine.BackgroundColor3 = col
-        snapLine.Position  = UDim2.fromOffset(ox, oy)
-        snapLine.Size      = UDim2.fromOffset(len, thick)
-        snapLine.Rotation  = math.deg(math.atan2(dy, dx))
-        snapLine.Visible   = true
-    end))
-end
-
-
-
--- ============================================================
 -- SPINBOT
 -- ============================================================
 do
@@ -2788,9 +2716,6 @@ do
         root.CFrame = CFrame.new(pos)
             * CFrame.Angles(0, math.rad(yaw), 0)
             * CFrame.Angles(pitch, 0, 0)
-        root.AssemblyLinearVelocity = Vector3.new(
-            root.AssemblyLinearVelocity.X, root.AssemblyLinearVelocity.Y, root.AssemblyLinearVelocity.Z
-        )
     end))
 end
 
@@ -2867,6 +2792,7 @@ do
     local _flyInput   = nil
     local _flyActive  = false
     local _flyBV      = nil
+    local _flyBG      = nil
     local _flyYaw     = 0
     local _flyPitch   = 0
 
@@ -2874,49 +2800,73 @@ do
         if _flyActive then return end
         _flyActive = true
         local char = LocalPlayer.Character
-        if not char then _flyActive=false; return end
+        if not char then _flyActive = false; return end
         local root = char:FindFirstChild("HumanoidRootPart")
         local hum  = char:FindFirstChildOfClass("Humanoid")
-        if not root or not hum then _flyActive=false; return end
+        if not root or not hum then _flyActive = false; return end
+
+        -- Seed yaw/pitch from current camera so direction matches where you're looking
+        local camCF = workspace.CurrentCamera.CFrame
+        local rx, ry = camCF:ToEulerAnglesYXZ()
+        _flyYaw   = ry
+        _flyPitch = math.clamp(rx, -math.pi/2 + 0.01, math.pi/2 - 0.01)
+
         hum.PlatformStand = true
-        -- BodyVelocity for movement
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+
         local bv = Instance.new("BodyVelocity")
-        bv.Velocity = Vector3.new(0,0,0)
-        bv.MaxForce = Vector3.new(1e5,1e5,1e5)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
         bv.Parent = root
         _flyBV = bv
-        -- BodyGyro to hold orientation
+
         local bg = Instance.new("BodyGyro")
-        bg.MaxTorque = Vector3.new(1e5,1e5,1e5)
-        bg.D = 100
+        bg.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        bg.D = 200
+        bg.P = 1e4
         bg.Parent = root
+        _flyBG = bg
+
+        -- Mouse delta drives yaw/pitch
         _flyInput = UserInputService.InputChanged:Connect(function(i)
             if not _flyActive then return end
             if i.UserInputType == Enum.UserInputType.MouseMovement then
                 _flyYaw   = _flyYaw   - i.Delta.X * 0.003
-                _flyPitch = math.clamp(_flyPitch - i.Delta.Y * 0.003, -math.pi/2+0.01, math.pi/2-0.01)
+                _flyPitch = math.clamp(_flyPitch - i.Delta.Y * 0.003, -math.pi/2 + 0.01, math.pi/2 - 0.01)
             end
         end)
+
         _flyConn = RunService.RenderStepped:Connect(function(dt)
             if not _flyActive then return end
-            local speed = (ApexEngine.Flags["m_flyspeed"] or 20)
+            local speed = ApexEngine.Flags["m_flyspeed"] or 20
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2 end
+
+            -- Build direction from yaw+pitch (horizontal yaw, vertical pitch)
             local cf    = CFrame.Angles(0, _flyYaw, 0) * CFrame.Angles(_flyPitch, 0, 0)
             local fwd   = cf.LookVector
             local right = cf.RightVector
-            local up    = Vector3.new(0,1,0)
-            local move  = Vector3.new(0,0,0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + fwd   end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - fwd   end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + right end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - right end
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) then move = move + up    end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then move = move - up    end
+            local up    = Vector3.new(0, 1, 0)
+            local move  = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += fwd   end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= fwd   end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += right end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= right end
+            if UserInputService:IsKeyDown(Enum.KeyCode.E) then move += up    end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then move -= up    end
+
             if _flyBV then
-                _flyBV.Velocity = move.Magnitude > 0.001 and move.Unit * speed or Vector3.new(0,0,0)
+                _flyBV.Velocity = move.Magnitude > 0.001 and move.Unit * speed or Vector3.new(0, 0, 0)
             end
-            if bg and bg.Parent then
-                bg.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, _flyYaw, 0)
+            -- Lock body rotation to yaw only (no pitch tilt on character)
+            if _flyBG and _flyBG.Parent then
+                _flyBG.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, _flyYaw, 0)
+            end
+            -- Sync camera to fly direction so it feels 1:1
+            if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position)
+                    * CFrame.Angles(0, _flyYaw, 0)
+                    * CFrame.Angles(_flyPitch, 0, 0)
             end
         end)
     end
@@ -2927,6 +2877,8 @@ do
         if _flyConn  then _flyConn:Disconnect();  _flyConn  = nil end
         if _flyInput then _flyInput:Disconnect(); _flyInput = nil end
         if _flyBV    then _flyBV:Destroy();       _flyBV    = nil end
+        if _flyBG    then _flyBG:Destroy();       _flyBG    = nil end
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
         local char = LocalPlayer.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
@@ -2938,6 +2890,8 @@ do
                 end
             end
         end
+        -- Restore camera to Roblox default
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
     end
 
     local _prevFly = false
@@ -2948,7 +2902,7 @@ do
         if cur then enableFly() else disableFly() end
     end))
     LocalPlayer.CharacterAdded:Connect(function()
-        if _flyActive then disableFly(); ApexEngine.Flags["m_fly"]=false end
+        if _flyActive then disableFly(); ApexEngine.Flags["m_fly"] = false end
     end)
 end
 
@@ -2986,20 +2940,6 @@ do
             end
         end
     end))
-end
-
--- ============================================================
--- INSTANT BULLET (hook extension — adds to existing GunFire hook)
--- ============================================================
--- Handled inside the existing _saHooked block via flags["instant_bullet"]
--- We patch the hook to also check instant_bullet:
-do
-    -- The existing hook already fires; we extend it by watching the flag.
-    -- Instant bullet is applied inside the hookfunction via args[1] redirect.
-    -- We add a post-hook watcher that modifies args[1] (muzzle pos) to near target.
-    -- Since hookfunction is already set, we use a flag check inside the existing hook.
-    -- The existing hook block checks flags["always_headshot"] — we piggyback instant_bullet there.
-    -- No additional code needed here; the hook block below is updated.
 end
 
 -- ============================================================
@@ -3176,6 +3116,65 @@ do
             if not drawn[id] then hideC4Label(id) end
         end
     end))
+end
+
+-- ============================================================
+-- THIRD PERSON
+-- ============================================================
+do
+    local _tpActive = false
+    local _tpOrigType = nil
+    local _tpOrigSubj = nil
+    local _tpOrigFOV  = nil
+
+    local function enableTP()
+        if _tpActive then return end
+        _tpActive = true
+        local cam = workspace.CurrentCamera
+        _tpOrigType = cam.CameraType
+        _tpOrigSubj = cam.CameraSubject
+        _tpOrigFOV  = cam.FieldOfView
+        cam.CameraType = Enum.CameraType.Custom
+        -- set subject to humanoid so Roblox handles the orbit, just push the zoom out
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then cam.CameraSubject = hum end
+    end
+
+    local function disableTP()
+        if not _tpActive then return end
+        _tpActive = false
+        local cam = workspace.CurrentCamera
+        cam.CameraType = _tpOrigType or Enum.CameraType.Custom
+        if _tpOrigSubj then cam.CameraSubject = _tpOrigSubj end
+        cam.FieldOfView = _tpOrigFOV or 70
+    end
+
+    local _prevTP = false
+    trackConnection(RunService.RenderStepped:Connect(function()
+        local flags = ApexEngine.Flags
+        local cur = flags["m_thirdperson"] == true
+        if cur ~= _prevTP then
+            _prevTP = cur
+            if cur then enableTP() else disableTP() end
+        end
+        if not _tpActive then return end
+        -- push camera back by TP distance using CameraOffset on HRP
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChil        local hum2 = char and char:FindFirstChildOfClass("Humanoid")
+        if hum2 then
+            local dist = flags["m_thirdperson_dist"] or 12
+            hum2.CameraOffset = Vector3.new(0, 2, dist)
+terAdded:Connect(function()
+        if _tpActive then
+            -- re-apply subject on respawn
+            task.defer(function()
+                local char = LocalPlayer.Character
+                local hum  = char and char:FindFirstChildOfClass("Humanoid")
+                if hum then workspace.CurrentCamera.CameraSubject = hum end
+            end)
+        end
+    end)
 end
 
 return ApexEngine
