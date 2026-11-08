@@ -457,7 +457,6 @@ function ApexEngine:CreateWindow(cfg)
     })
     Window.Gui = gui
     local blur = New("BlurEffect", { Size=0, Name="ApexEngineBlur", Parent=Lighting })
-    Tween(blur, 0.4, { Size=cfg.Blur or 12 })
 
     local main = New("Frame", {
         Name="Main", Size=UDim2.fromOffset(690,500),
@@ -2750,6 +2749,7 @@ do
         _flyPitch = math.clamp(rx, -math.pi/2 + 0.01, math.pi/2 - 0.01)
 
         hum.PlatformStand = true
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Scriptable
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 
         local bv = Instance.new("BodyVelocity")
@@ -2800,9 +2800,11 @@ do
                 _flyBG.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, _flyYaw, 0)
             end
             -- Sync camera to fly direction so it feels 1:1
-            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position)
-                * CFrame.Angles(0, _flyYaw, 0)
-                * CFrame.Angles(_flyPitch, 0, 0)
+            if workspace.CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+                workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position)
+                    * CFrame.Angles(0, _flyYaw, 0)
+                    * CFrame.Angles(_flyPitch, 0, 0)
+            end
         end)
     end
 
