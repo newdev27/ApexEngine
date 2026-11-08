@@ -1619,8 +1619,6 @@ do
     local _enemyCache = {}
     local _enemyCacheFrame = -1
     local function getEnemies()
-        local cf = RunService.RenderStepped:Wait and _enemyCacheFrame or -1
-        -- use tick-based invalidation: rebuild if called from a new logical frame
         local now = os.clock()
         if now == _enemyCacheFrame then return _enemyCache end
         _enemyCacheFrame = now
