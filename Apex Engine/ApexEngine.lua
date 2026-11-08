@@ -1776,19 +1776,21 @@ do
 
     local _rapidFireActive = false
 
-    -- Hook ALL RemoteEvent:FireServer calls via hookmetamethod so we catch every gun
-    -- regardless of which remote they use. The reference confirms the game uses GunFire
-    -- but we also catch any remote that passes 2+ Vector3 args as a fallback.
-    if hookmetamethod and newcclosure then
+    -- Wait for GunFire remote then hook it directly — no __namecall needed
+    task.spawn(function()
+        local GunFireRemote = game:GetService("ReplicatedStorage"):WaitForChild("GunFire", 30)
+        if not GunFireRemote then return end
+        GunFire = GunFireRemote
+
+        if not (hookmetamethod and newcclosure) then return end
+
         local _origNamecall
         _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             local method = getnamecallmethod()
-            if method ~= "FireServer" then return _origNamecall(self, ...) end
-            if not self:IsA("RemoteEvent") then return _origNamecall(self, ...) end
-
-            local name = self.Name
-            local isGunFire = name == "GunFire"
-            if not isGunFire then return _origNamecall(self, ...) end
+            -- only intercept FireServer on the exact GunFire remote
+            if method ~= "FireServer" or self ~= GunFireRemote then
+                return _origNamecall(self, ...)
+            end
 
             local args = {...}
             local flags = ApexEngine.Flags
@@ -1799,7 +1801,6 @@ do
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
                 local vp = cam.ViewportSize
                 local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-                -- no FOV cap: always headshot works on any visible enemy regardless of crosshair distance
                 local bestDist, bestHead = math.huge, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
@@ -1825,11 +1826,8 @@ do
                     local dir = (targetPos - origin)
                     if dir.Magnitude > 0.001 then
                         dir = dir.Unit
-                        -- find args[3] slot: first Vector3 arg after args[1] that isn't origin
                         for i = 2, #args do
-                            if typeof(args[i]) == "Vector3" then
-                                args[i] = dir; break
-                            end
+                            if typeof(args[i]) == "Vector3" then args[i] = dir; break end
                         end
                     end
                     if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
@@ -1839,7 +1837,7 @@ do
                         task.spawn(function()
                             for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                                 task.wait()
-                                task.spawn(function() _origNamecall(self, table.unpack(args)) end)
+                                pcall(_origNamecall, self, table.unpack(args))
                             end
                             _rapidFireActive = false
                         end)
@@ -1858,7 +1856,6 @@ do
                 local doSmooth  = flags["sa_smooth"]    == true
                 local doLock    = flags["sa_lock"]      == true
 
-                -- Validate lock: clear if target died/left or SA was toggled off
                 if flags["_sa_clear_lock"] then
                     _saLocked = nil; _saLockedPart = nil; _saLastDir = nil
                     ApexEngine.Flags["_sa_clear_lock"] = nil
@@ -1873,26 +1870,21 @@ do
                 if saHitRoll(hitchance) then
                     local target, part, predicted
                     if doLock and _saLocked then
-                        -- re-resolve predicted pos for locked target
-                        local e = nil
                         for _, en in ipairs(getEnemies()) do
-                            if en.player == _saLocked then e = en; break end
-                        end
-                        if e then
-                            part = getR6Part(e.char, partName)
-                            if part then
-                                local vel = e.root.AssemblyLinearVelocity
-                                local bulletSpeed = flags["sa_bulletspeed"] or 500
-                                local travelTime = (part.Position - origin).Magnitude / bulletSpeed
-                                predicted = part.Position + vel * travelTime
-                                target = e
+                            if en.player == _saLocked then
+                                part = getR6Part(en.char, partName)
+                                if part then
+                                    local vel = en.root.AssemblyLinearVelocity
+                                    local travelTime = (part.Position - origin).Magnitude / (flags["sa_bulletspeed"] or 500)
+                                    predicted = part.Position + vel * travelTime
+                                    target = en
+                                end
+                                break
                             end
                         end
                     else
                         target, part, predicted = saPickTarget(partName, fovPx, wallCheck, origin)
-                        if doLock and target then
-                            _saLocked = target.player; _saLockedPart = part
-                        end
+                        if doLock and target then _saLocked = target.player; _saLockedPart = part end
                     end
 
                     if target and part and predicted then
@@ -1925,7 +1917,7 @@ do
                 end
             end
 
-            -- Bullet Tracers standalone (only if SA didn't already draw one)
+            -- Bullet Tracers standalone
             if flags["bullet_tracers"] and not flags["sa_enabled"] and typeof(args[3]) == "Vector3" then
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
@@ -1941,7 +1933,7 @@ do
                 task.spawn(function()
                     for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                         task.wait()
-                        task.spawn(function() _origNamecall(self, table.unpack(args)) end)
+                        pcall(_origNamecall, self, table.unpack(args))
                     end
                     _rapidFireActive = false
                 end)
@@ -1950,7 +1942,7 @@ do
 
             return _origNamecall(self, table.unpack(args))
         end))
-    end
+    end)
 
     -- No Recoil (camera pitch-lock only)
 
