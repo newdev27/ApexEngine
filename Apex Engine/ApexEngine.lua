@@ -231,6 +231,12 @@ trackConnection(UserInputService.InputEnded:Connect(function(i)
     end
 end))
 
+-- ── Widget registry (must be before CreateWindow is called) ─
+local _widgetRegistry = {}
+local function registerWidget(flag, obj, wtype)
+    if flag then _widgetRegistry[#_widgetRegistry+1] = {flag=flag, obj=obj, wtype=wtype} end
+end
+
 -- ── ApexEngine core ───────────────────────────────────────
 local ApexEngine = { Flags = {}, Theme = Theme, ToggleKey = Enum.KeyCode.RightShift }
 ApexEngine.__index = ApexEngine
@@ -1174,12 +1180,6 @@ local function saveConfig(name)
     end
     pcall(function() writefile(CFG_FOLDER.."/"..name..".json", game:GetService("HttpService"):JSONEncode(data)) end)
 end
--- Registry of all widget objects so loadConfig can update their visual state
-local _widgetRegistry = {} -- { flag=string, obj=widgetObj, type="checkbox"|"slider"|"dropdown"|"colorpicker" }
-local function registerWidget(flag, obj, wtype)
-    if flag then _widgetRegistry[#_widgetRegistry+1] = {flag=flag, obj=obj, wtype=wtype} end
-end
-
 local function loadConfig(name)
     if not name or name=="" then return end
     local raw = (isfile and isfile(CFG_FOLDER.."/"..name..".json")) and readfile(CFG_FOLDER.."/"..name..".json") or nil
@@ -1794,18 +1794,43 @@ do
 
     local _rapidFireActive = false
 
-    -- Wait for GunFire remote then hook it directly — no __namecall needed
+    -- Wait for GunFire remote then hook it directly
+    -- Also hooks R6CameraAimRemote for NoClip position spoofing
+    -- Both must share ONE hookmetamethod call — multiple calls overwrite each other
     task.spawn(function()
         local GunFireRemote = game:GetService("ReplicatedStorage"):WaitForChild("GunFire", 30)
         if not GunFireRemote then return end
         GunFire = GunFireRemote
+
+        -- Wait for R6CameraAimRemote too (may already exist)
+        local R6Remote = game:GetService("ReplicatedStorage"):FindFirstChild("R6CameraAimRemote")
+        if not R6Remote then
+            task.spawn(function()
+                R6Remote = game:GetService("ReplicatedStorage"):WaitForChild("R6CameraAimRemote", 30)
+            end)
+        end
 
         if not (hookmetamethod and newcclosure) then return end
 
         local _origNamecall
         _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             local method = getnamecallmethod()
-            -- only intercept FireServer on the exact GunFire remote
+
+            -- ── R6CameraAimRemote: spoof position during NoClip ──────────
+            if method == "FireServer" and R6Remote and self == R6Remote
+                and ApexEngine.Flags["m_noclip"] then
+                local args = {...}
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if root and typeof(args[4]) == "Vector3" then
+                    local cam = workspace.CurrentCamera
+                    local camOffset = cam and (cam.CFrame.Position - root.Position) or Vector3.new(0, 1.5, 0)
+                    args[4] = root.Position + camOffset
+                end
+                return _origNamecall(self, table.unpack(args))
+            end
+
+            -- ── GunFire: only intercept FireServer on the exact remote ───
             if method ~= "FireServer" or self ~= GunFireRemote then
                 return _origNamecall(self, ...)
             end
@@ -2783,42 +2808,11 @@ end
 
 -- ============================================================
 -- NO CLIP
--- R6CameraBodyAim sends camera position to server every frame.
--- The server uses it to validate character position and rubberbands
--- you back. Fix: hook R6CameraAimRemote FireServer to spoof the
--- position as the server-side character root position while noclip
--- is active, so the server never sees you out of bounds.
+-- R6CameraAimRemote position spoofing is handled inside the
+-- shared hookmetamethod in the COMBAT block above.
 -- ============================================================
 do
     local _ncConn, _prevNC = nil, false
-
-    -- Hook R6CameraAimRemote to spoof position during noclip
-    task.spawn(function()
-        local R6Remote = game:GetService("ReplicatedStorage"):WaitForChild("R6CameraAimRemote", 30)
-        if not R6Remote then return end
-        if not (hookmetamethod and newcclosure and getnamecallmethod) then return end
-
-        local _orig
-        _orig = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if method == "FireServer" and self == R6Remote and ApexEngine.Flags["m_noclip"] then
-                local args = {...}
-                -- args: pitch, yaw, hasTool, position, lookVector, serverTime, isActive
-                -- Spoof position (arg 4) to the server-authoritative root position
-                -- so the server's anti-teleport check passes
-                local char = LocalPlayer.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if root and typeof(args[4]) == "Vector3" then
-                    -- Use the camera position offset from root so it looks natural
-                    local cam = workspace.CurrentCamera
-                    local camOffset = cam and (cam.CFrame.Position - root.Position) or Vector3.new(0, 1.5, 0)
-                    args[4] = root.Position + camOffset
-                end
-                return _orig(self, table.unpack(args))
-            end
-            return _orig(self, ...)
-        end))
-    end)
 
     trackConnection(RunService.Heartbeat:Connect(function()
         local cur = ApexEngine.Flags["m_noclip"] == true
@@ -2831,15 +2825,12 @@ do
                 if not c then return end
                 local r = c:FindFirstChild("HumanoidRootPart")
                 if r then
-                    -- Zero out vertical velocity so gravity doesn't fight us
                     local vel = r.AssemblyLinearVelocity
                     r.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
                 end
-                -- Disable collision on all character parts
                 for _, p in ipairs(c:GetDescendants()) do
                     if p:IsA("BasePart") then p.CanCollide = false end
                 end
-                -- Also disable on held tool
                 local tool = c:FindFirstChildOfClass("Tool")
                 if tool then
                     for _, p in ipairs(tool:GetDescendants()) do
