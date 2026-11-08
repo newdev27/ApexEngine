@@ -2327,19 +2327,19 @@ do
                 d.nameLabel.Visible = false
             end
 
-            -- Health bar (left side, vertical, grows bottom-up)
+            -- Health bar (left side, fixed 4x60px, grows bottom-up)
             if flags["esp_health"] then
                 local hp  = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                 local r   = math.clamp(2*(1-hp), 0, 1)
                 local g   = math.clamp(2*hp, 0, 1)
                 local col = flags["esp_health_col"] or Color3.new(r, g, 0.1)
-                local barW = 4
-                d.healthBg.Position = UDim2.fromOffset(x1 - barW - 3, y1)
-                d.healthBg.Size     = UDim2.fromOffset(barW, bh)
+                local barH = 60
+                local midY = (y1 + y2) / 2
+                d.healthBg.Position = UDim2.fromOffset(x1 - 7, midY - barH/2)
+                d.healthBg.Size     = UDim2.fromOffset(4, barH)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
-                d.healthFill.Size     = UDim2.new(1, 0, hp, 0)
-                -- AnchorPoint=(0,1) + Position=(0,0,1,0) means fill grows upward from bottom
+                d.healthFill.Size   = UDim2.new(1, 0, hp, 0)
                 d.healthText.Text    = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
                 d.healthText.Visible = true
             else
@@ -2847,30 +2847,37 @@ end
 -- NO CLIP
 -- ============================================================
 do
-    local _ncConn = nil
-    local _prevNC = false
+    local _ncConn, _prevNC = nil, false
     trackConnection(RunService.Heartbeat:Connect(function()
         local cur = ApexEngine.Flags["m_noclip"] == true
         if cur == _prevNC then return end
         _prevNC = cur
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
         if cur then
-            _ncConn = RunService.Stepped:Connect(function()
-                local char = LocalPlayer.Character
-                if not char then return end
-                for _, p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then
-                        p.CanCollide = false
-                    end
+            -- PreSimulation fires before physics resolves, minimising rubberband
+            _ncConn = RunService.PreSimulation:Connect(function()
+                local c = LocalPlayer.Character
+                if not c then return end
+                local r = c:FindFirstChild("HumanoidRootPart")
+                if r then
+                    -- kill server-side velocity correction each frame
+                    r.AssemblyLinearVelocity = Vector3.new(
+                        r.AssemblyLinearVelocity.X,
+                        math.max(r.AssemblyLinearVelocity.Y, 0), -- keep upward, kill downward snap
+                        r.AssemblyLinearVelocity.Z
+                    )
+                end
+                for _, p in ipairs(c:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
                 end
             end)
         else
             if _ncConn then _ncConn:Disconnect(); _ncConn = nil end
-            local char = LocalPlayer.Character
             if char then
                 for _, p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then
-                        p.CanCollide = true
-                    end
+                    if p:IsA("BasePart") then p.CanCollide = true end
                 end
             end
         end
@@ -3193,493 +3200,6 @@ do
         for id in pairs(_c4Labels) do
             if not drawn[id] then hideC4Label(id) end
         end
-    end))
-end
-
--- ============================================================
--- CROSSHAIR
--- ============================================================
-do
-    local chGui = Instance.new("ScreenGui")
-    chGui.Name = "ApexCrosshair"
-    chGui.ResetOnSpawn = false
-    chGui.IgnoreGuiInset = true
-    chGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    chGui.Parent = GetParentGui()
-
-    local function makeLine()
-        local f = Instance.new("Frame")
-        f.BorderSizePixel = 0
-        f.AnchorPoint = Vector2.new(0.5, 0.5)
-        f.Parent = chGui
-        return f
-    end
-    local chTop=makeLine(); local chBottom=makeLine()
-    local chLeft=makeLine(); local chRight=makeLine()
-
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["crosshair_enabled"] then
-            chTop.Visible=false; chBottom.Visible=false
-            chLeft.Visible=false; chRight.Visible=false
-            return
-        end
-        local vp  = workspace.CurrentCamera.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local gap   = flags["crosshair_gap"]   or 4
-        local size  = flags["crosshair_size"]  or 8
-        local thick = flags["crosshair_thick"] or 1
-        local col   = flags["crosshair_col"]   or Color3.new(1,1,1)
-        chTop.BackgroundColor3=col; chTop.Size=UDim2.fromOffset(thick,size)
-        chTop.Position=UDim2.fromOffset(cx, cy-gap-size/2); chTop.Visible=true
-        chBottom.BackgroundColor3=col; chBottom.Size=UDim2.fromOffset(thick,size)
-        chBottom.Position=UDim2.fromOffset(cx, cy+gap+size/2); chBottom.Visible=true
-        chLeft.BackgroundColor3=col; chLeft.Size=UDim2.fromOffset(size,thick)
-        chLeft.Position=UDim2.fromOffset(cx-gap-size/2, cy); chLeft.Visible=true
-        chRight.BackgroundColor3=col; chRight.Size=UDim2.fromOffset(size,thick)
-        chRight.Position=UDim2.fromOffset(cx+gap+size/2, cy); chRight.Visible=true
-    end))
-end
-
--- ============================================================
--- SNAPLINE
--- ============================================================
-do
-    local snapGui = Instance.new("ScreenGui")
-    snapGui.Name="ApexSnapline"; snapGui.ResetOnSpawn=false
-    snapGui.IgnoreGuiInset=true; snapGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
-    snapGui.Parent = GetParentGui()
-    local snapLine = Instance.new("Frame")
-    snapLine.BorderSizePixel=0; snapLine.AnchorPoint=Vector2.new(0,0.5)
-    snapLine.Visible=false; snapLine.Parent=snapGui
-
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["snap_enabled"] then snapLine.Visible=false; return end
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best=sp end
-                end
-            end
-        end
-        if not best then snapLine.Visible=false; return end
-        local origin = flags["snap_origin"] or "Bottom"
-        local ox, oy = cx, (origin=="Center" and cy or vp.Y)
-        local dx, dy = best.X-ox, best.Y-oy
-        local len = math.sqrt(dx*dx+dy*dy)
-        if len < 1 then snapLine.Visible=false; return end
-        snapLine.BackgroundColor3 = flags["snap_col"] or Color3.fromRGB(255,200,0)
-        snapLine.Position  = UDim2.fromOffset(ox, oy)
-        snapLine.Size      = UDim2.fromOffset(len, flags["snap_thick"] or 1)
-        snapLine.Rotation  = math.deg(math.atan2(dy, dx))
-        snapLine.Visible   = true
-    end))
-end
-
--- ============================================================
--- CAMLOCK
--- ============================================================
-do
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["ab_camlock"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best=head end
-                end
-            end
-        end
-        if not best then return end
-        local targetPos = best.Position
-        local hroot = best.Parent and best.Parent:FindFirstChild("HumanoidRootPart")
-        if hroot then
-            targetPos = targetPos + hroot.AssemblyLinearVelocity * ((flags["ab_camlock_smooth"] or 10) * 0.012)
-        end
-        local smooth = math.clamp((flags["ab_camlock_smooth"] or 10) / 50, 0.01, 1)
-        local w = cam.CFrame
-        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1-smooth, 0.01, 0.99))
-    end))
-end
-
--- ============================================================
--- SPINBOT
--- ============================================================
-do
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["spinbot"] then return end
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        local speed = (flags["spinbot_speed"] or 25) * 10
-        local yaw   = (os.clock() * speed) % 360
-        local pitch = 0
-        local mode  = flags["spinbot_pitch"] or "Normal"
-        if mode == "Down" then
-            pitch = -1.3089969389957472
-        elseif mode == "Jitter" then
-            pitch = math.rad(math.random() > 0.5 and 65 or -75)
-        end
-        root.CFrame = CFrame.new(root.Position)
-            * CFrame.Angles(0, math.rad(yaw), 0)
-            * CFrame.Angles(pitch, 0, 0)
-    end))
-end
-
--- ============================================================
--- FOV CHANGER
--- ============================================================
-do
-    local _origFovCh = nil
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if flags["w_fovchanger"] then
-            if not _origFovCh then _origFovCh = workspace.CurrentCamera.FieldOfView end
-            workspace.CurrentCamera.FieldOfView = flags["w_customfov"] or 70
-        else
-            if _origFovCh then
-                workspace.CurrentCamera.FieldOfView = _origFovCh
-                _origFovCh = nil
-            end
-        end
-    end))
-end
-
--- ============================================================
--- NO CLIP
--- ============================================================
-do
-    local _ncConn, _prevNC = nil, false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local cur = ApexEngine.Flags["m_noclip"] == true
-        if cur == _prevNC then return end
-        _prevNC = cur
-        if cur then
-            _ncConn = RunService.Stepped:Connect(function()
-                local char = LocalPlayer.Character
-                if not char then return end
-                for _, p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide = false end
-                end
-            end)
-        else
-            if _ncConn then _ncConn:Disconnect(); _ncConn = nil end
-            local char = LocalPlayer.Character
-            if char then
-                for _, p in ipairs(char:GetDescendants()) do
-                    if p:IsA("BasePart") then p.CanCollide = true end
-                end
-            end
-        end
-    end))
-end
-
--- ============================================================
--- FLY
--- ============================================================
-do
-    local _flyConn, _flyInput, _flyActive = nil, nil, false
-    local _flyBV, _flyBG, _flyYaw, _flyPitch = nil, nil, 0, 0
-
-    local function enableFly()
-        if _flyActive then return end
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if not root or not hum then return end
-        _flyActive = true
-        hum.PlatformStand = true
-        _flyBV = Instance.new("BodyVelocity")
-        _flyBV.Velocity = Vector3.new(0,0,0)
-        _flyBV.MaxForce = Vector3.new(1e5,1e5,1e5)
-        _flyBV.Parent = root
-        _flyBG = Instance.new("BodyGyro")
-        _flyBG.MaxTorque = Vector3.new(1e5,1e5,1e5)
-        _flyBG.D = 100
-        _flyBG.Parent = root
-        local cf = workspace.CurrentCamera.CFrame
-        local rx, ry = cf:ToEulerAnglesYXZ()
-        _flyYaw = ry; _flyPitch = rx
-        _flyInput = UserInputService.InputChanged:Connect(function(i)
-            if not _flyActive then return end
-            if i.UserInputType == Enum.UserInputType.MouseMovement then
-                _flyYaw   = _flyYaw   - i.Delta.X * 0.003
-                _flyPitch = math.clamp(_flyPitch - i.Delta.Y * 0.003, -math.pi/2+0.01, math.pi/2-0.01)
-            end
-        end)
-        _flyConn = RunService.RenderStepped:Connect(function()
-            if not _flyActive then return end
-            local speed = ApexEngine.Flags["m_flyspeed"] or 20
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 2 end
-            local cf2   = CFrame.Angles(0,_flyYaw,0) * CFrame.Angles(_flyPitch,0,0)
-            local move  = Vector3.new(0,0,0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cf2.LookVector  end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cf2.LookVector  end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cf2.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cf2.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) then move = move + Vector3.new(0,1,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then move = move - Vector3.new(0,1,0) end
-            if _flyBV then _flyBV.Velocity = move.Magnitude > 0.001 and move.Unit*speed or Vector3.new(0,0,0) end
-            if _flyBG and _flyBG.Parent then
-                _flyBG.CFrame = CFrame.new(root.Position) * CFrame.Angles(0,_flyYaw,0)
-            end
-        end)
-    end
-
-    local function disableFly()
-        if not _flyActive then return end
-        _flyActive = false
-        if _flyConn  then _flyConn:Disconnect();  _flyConn  = nil end
-        if _flyInput then _flyInput:Disconnect(); _flyInput = nil end
-        if _flyBV    then _flyBV:Destroy();       _flyBV    = nil end
-        if _flyBG    then _flyBG:Destroy();       _flyBG    = nil end
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.PlatformStand = false end
-        end
-    end
-
-    local _prevFly = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local cur = ApexEngine.Flags["m_fly"] == true
-        if cur == _prevFly then return end
-        _prevFly = cur
-        if cur then enableFly() else disableFly() end
-    end))
-    LocalPlayer.CharacterAdded:Connect(function()
-        if _flyActive then disableFly(); ApexEngine.Flags["m_fly"]=false end
-    end)
-end
-
--- ============================================================
--- SPECTATE
--- ============================================================
-do
-    local _prevSpec = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["m_spectate"] then
-            if _prevSpec then
-                local cam  = workspace.CurrentCamera
-                local char = LocalPlayer.Character
-                local hum  = char and char:FindFirstChildOfClass("Humanoid")
-                if hum then cam.CameraSubject = hum end
-                cam.CameraType = Enum.CameraType.Custom
-                _prevSpec = false
-            end
-            return
-        end
-        _prevSpec = true
-        local target = flags["m_spectate_target"]
-        if not target or target == "" then return end
-        local cam = workspace.CurrentCamera
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer
-                and (p.Name:lower() == target:lower() or p.DisplayName:lower() == target:lower()) then
-                local char = p.Character
-                local hum  = char and char:FindFirstChildOfClass("Humanoid")
-                if hum and cam.CameraSubject ~= hum then
-                    cam.CameraSubject = hum
-                    cam.CameraType    = Enum.CameraType.Follow
-                end
-                return
-            end
-        end
-    end))
-end
-
--- ============================================================
--- OMNI SPRINT RESTORE
--- ============================================================
-do
-    local _origWS = nil
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["m_omnisprint"] then
-            if _origWS then
-                local char = LocalPlayer.Character
-                local hum  = char and char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.WalkSpeed = _origWS end
-                _origWS = nil
-            end
-            return
-        end
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then return end
-        if not _origWS then _origWS = hum.WalkSpeed end
-        hum.WalkSpeed = hum.MoveDirection.Magnitude > 0.05
-            and (16 + (flags["m_omnisprint_bonus"] or 0))
-            or _origWS
-    end))
-end
-
--- ============================================================
--- C4 + ROCKET ESP
--- ============================================================
-do
-    local _c4Cache    = {}
-    local _rocketData = {}
-    local _rktFolders = {"FiredRockets","SpawnedRockets","Rockets"}
-
-    local function playAlert(dist)
-        local snd = Instance.new("Sound")
-        snd.SoundId = "rbxassetid://9125402735"
-        snd.Volume  = math.clamp(1 - dist/500, 0.1, 1)
-        snd.Parent  = workspace; snd:Play()
-        game:GetService("Debris"):AddItem(snd, 2)
-    end
-
-    local _c4Gui = Instance.new("ScreenGui")
-    _c4Gui.Name="ApexC4ESP"; _c4Gui.ResetOnSpawn=false
-    _c4Gui.IgnoreGuiInset=true; _c4Gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
-    _c4Gui.Parent = GetParentGui()
-    local _c4Labels = {}
-
-    local function getC4Lbl(id)
-        if not _c4Labels[id] then
-            local bg = Instance.new("Frame")
-            bg.BackgroundColor3=Color3.new(0,0,0); bg.BackgroundTransparency=0.5
-            bg.BorderSizePixel=0; bg.AutomaticSize=Enum.AutomaticSize.XY; bg.Parent=_c4Gui
-            local lbl = Instance.new("TextLabel")
-            lbl.BackgroundTransparency=1; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11
-            lbl.TextStrokeTransparency=0.4; lbl.TextStrokeColor3=Color3.new(0,0,0)
-            lbl.AutomaticSize=Enum.AutomaticSize.XY; lbl.Parent=bg
-            _c4Labels[id]={bg=bg,lbl=lbl}
-        end
-        return _c4Labels[id]
-    end
-    local function hideC4(id) local e=_c4Labels[id]; if e then e.bg.Visible=false end end
-    local function placeC4(id, pos, text, col)
-        local sp, onSc = workspace.CurrentCamera:WorldToViewportPoint(pos)
-        if not onSc or sp.Z<=0 then hideC4(id); return end
-        local e = getC4Lbl(id)
-        e.lbl.Text=text; e.lbl.TextColor3=col
-        e.bg.Position=UDim2.fromOffset(sp.X,sp.Y); e.bg.Visible=true
-    end
-
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags  = ApexEngine.Flags
-        local camPos = workspace.CurrentCamera.CFrame.Position
-        local t      = os.clock()
-        local drawn  = {}
-
-        if flags["wesp_c4"] then
-            local folder = workspace:FindFirstChild("PlacedC4")
-            if folder then
-                for _, obj in ipairs(folder:GetChildren()) do
-                    local pos = obj:IsA("BasePart") and obj.Position
-                        or (obj.PrimaryPart and obj.PrimaryPart.Position)
-                    if pos then
-                        local id = "c4_"..obj:GetDebugId()
-                        if not _c4Cache[id] then
-                            _c4Cache[id] = {pos=pos, expireAt=t+30}
-                            if flags["wesp_c4_alert"] then
-                                task.spawn(playAlert, (pos-camPos).Magnitude)
-                            end
-                        else
-                            _c4Cache[id].pos = pos
-                        end
-                    end
-                end
-            end
-            for id, data in pairs(_c4Cache) do
-                local rem = data.expireAt - t
-                if rem > 0 then
-                    drawn[id] = true
-                    placeC4(id, data.pos,
-                        string.format("C4 [%dm | %.1fs]", math.floor((data.pos-camPos).Magnitude), rem),
-                        Color3.fromRGB(255,60,60))
-                else
-                    _c4Cache[id]=nil; hideC4(id)
-                end
-            end
-        end
-
-        if flags["wesp_rockets"] then
-            for _, fname in ipairs(_rktFolders) do
-                local folder = workspace:FindFirstChild(fname)
-                if folder then
-                    for _, obj in ipairs(folder:GetChildren()) do
-                        local pos = obj:IsA("BasePart") and obj.Position
-                            or (obj.PrimaryPart and obj.PrimaryPart.Position)
-                        if pos then
-                            local id = "rkt_"..obj:GetDebugId()
-                            if not _rocketData[id] then
-                                _rocketData[id] = {pos=pos, expireAt=t+15}
-                            else
-                                _rocketData[id].pos = pos
-                            end
-                        end
-                    end
-                end
-            end
-            for id, data in pairs(_rocketData) do
-                local rem = data.expireAt - t
-                if rem > 0 then
-                    drawn[id] = true
-                    local dist = math.floor((data.pos-camPos).Magnitude)
-                    local label = flags["wesp_rocket_timer"]
-                        and string.format("ROCKET [%dm | %.1fs]", dist, rem)
-                        or  string.format("ROCKET [%dm]", dist)
-                    placeC4(id, data.pos, label, Color3.fromRGB(255,150,40))
-                else
-                    _rocketData[id]=nil; hideC4(id)
-                end
-            end
-        end
-
-        for id in pairs(_c4Labels) do
-            if not drawn[id] then hideC4(id) end
-        end
-    end))
-end
-
--- ============================================================
--- INSTANT BULLET (hook extension inside existing GunFire hook)
--- ============================================================
--- Instant bullet is handled by the existing _saHooked block.
--- We patch it here by overriding args[1] (muzzle origin) to near the target
--- when flags["instant_bullet"] is true. This runs inside the hookfunction
--- closure already set up above, so we add a second hook watcher:
-do
-    local _ibHooked = false
-    local rs2 = game:GetService("ReplicatedStorage")
-    trackConnection(RunService.Heartbeat:Connect(function()
-        if _ibHooked then return end
-        local gf = rs2:FindFirstChild("GunFire")
-        if not gf or not hookfunction then return end
-        _ibHooked = true
-        -- The primary hook is already set by the combat block.
-        -- Instant bullet logic is injected via the flags check inside that hook.
-        -- We register a secondary hook only if the primary wasn't set yet.
-        -- Since _saHooked handles it, we just ensure the flag is read there.
-        -- (No duplicate hook needed — the existing hook reads flags["instant_bullet"])
     end))
 end
 
