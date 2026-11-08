@@ -3222,7 +3222,7 @@ do
         _tpOrigSubj = cam.CameraSubject
         _tpOrigFOV  = cam.FieldOfView
         cam.CameraType = Enum.CameraType.Custom
-        -- set subject to humanoid so Roblox handles the orbit, just push the zoom out
+
         local char = LocalPlayer.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if hum then cam.CameraSubject = hum end
