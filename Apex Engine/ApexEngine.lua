@@ -991,6 +991,8 @@ miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
 miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Instant Equip",   Default=false, Flag="instant_equip" })
+miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
 miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
 miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
@@ -3183,6 +3185,53 @@ do
             end)
         end
     end)
+end
+
+-- ============================================================
+-- HAMMER: INSTANT EQUIP
+-- ============================================================
+do
+    local HammerMeleeRemote = game:GetService("ReplicatedStorage"):FindFirstChild("HammerMeleeRemote")
+    if not HammerMeleeRemote then
+        task.spawn(function()
+            HammerMeleeRemote = game:GetService("ReplicatedStorage"):WaitForChild("HammerMeleeRemote", 15)
+        end)
+    end
+
+    local function getHammerOriginDir()
+        local cam = workspace.CurrentCamera
+        if not cam then return nil, nil end
+        local vp = cam.ViewportSize
+        local ray = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.5, 0)
+        return ray.Origin, ray.Direction.Unit
+    end
+
+    local function fireHammerHit(toolName)
+        if not HammerMeleeRemote then return end
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local origin, unit = getHammerOriginDir()
+        if not origin or not unit then return end
+        pcall(function()
+            HammerMeleeRemote:FireServer(toolName, origin, unit, workspace:GetServerTimeNow())
+        end)
+    end
+
+    local function hookChar(char)
+        char.ChildAdded:Connect(function(child)
+            if not ApexEngine.Flags["instant_equip"] then return end
+            if not child:IsA("Tool") then return end
+            task.defer(function()
+                if child.Parent == char then
+                    fireHammerHit(child.Name)
+                end
+            end)
+        end)
+    end
+
+    if LocalPlayer.Character then hookChar(LocalPlayer.Character) end
+    trackConnection(LocalPlayer.CharacterAdded:Connect(hookChar))
 end
 
 return ApexEngine
