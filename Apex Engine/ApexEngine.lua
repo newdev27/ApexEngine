@@ -865,7 +865,7 @@ function ApexEngine:CreateWindow(cfg)
                         if listening and i.UserInputType==Enum.UserInputType.Keyboard then
                             listening=false; key=(i.KeyCode~=Enum.KeyCode.Escape) and i.KeyCode or nil
                             b.Text=key and key.Name or "None"; flag(o.Flag,key)
-                        elseif not gp and key and i.KeyCode==key and o.Callback then
+                        elseif not gp and not listening and key and i.KeyCode==key and o.Callback then
                             task.spawn(o.Callback,key)
                         end
                     end)
@@ -3183,10 +3183,10 @@ do
         if not _tpActive then return end
         -- push camera back by TP distance using CameraOffset on HRP
         local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then
+        local hum2 = char and char:FindFirstChildOfClass("Humanoid")
+        if hum2 then
             local dist = flags["m_thirdperson_dist"] or 12
-            hrp.CameraOffset = Vector3.new(0, 2, dist)
+            hum2.CameraOffset = Vector3.new(0, 2, dist)
         end
     end))
 
