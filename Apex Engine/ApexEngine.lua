@@ -1950,22 +1950,22 @@ do
         end))
     end))
 
-    -- No Recoil
-    local _noRecoilUnbound = {}
+    -- No Recoil: hook the recoil BindToRenderStep so the accumulator is zeroed each frame
+    local _origBind = RunService.BindToRenderStep
+    local _recoilHooked = false
     trackConnection(RunService.Heartbeat:Connect(function()
-        local char = LocalPlayer.Character
-        if not char then table.clear(_noRecoilUnbound); return end
-        for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") then
-                local bindName = "Recoil_" .. tool.Name
-                if ApexEngine.Flags["no_recoil"] then
-                    RunService:UnbindFromRenderStep(bindName)
-                    _noRecoilUnbound[bindName] = true
-                elseif _noRecoilUnbound[bindName] then
-                    _noRecoilUnbound[bindName] = nil
-                end
+        if _recoilHooked or not hookfunction then return end
+        _recoilHooked = true
+        hookfunction(_origBind, newcclosure(function(self, name, priority, fn)
+            if type(name) == "string" and name:find("Recoil_") then
+                local wrapped = newcclosure(function(dt)
+                    if ApexEngine.Flags["no_recoil"] then return end
+                    fn(dt)
+                end)
+                return _origBind(self, name, priority, wrapped)
             end
-        end
+            return _origBind(self, name, priority, fn)
+        end))
     end))
 
     -- Aimbot
@@ -1997,7 +1997,7 @@ do
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
     end))
 
-    -- Triggerbot
+    -- Triggerbot: raycast from screen center, fire GunFire remote directly
     local _tbLastFire = 0
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
@@ -2005,12 +2005,28 @@ do
         if not UserInputService:IsKeyDown(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
         local delay = (flags["tb_delay"] or 50) / 1000
         if os.clock() - _tbLastFire < delay then return end
-        local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
-        if not target then return end
-        _tbLastFire = os.clock()
-        if mouse1press and mouse1release then
-            mouse1press(); task.delay(0.05, mouse1release)
+        if not GunFire then return end
+        local cam = workspace.CurrentCamera
+        local vp  = cam.ViewportSize
+        local ray = cam:ViewportPointToRay(vp.X * 0.5, vp.Y * 0.5)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { LocalPlayer.Character }
+        local hit = workspace:Raycast(ray.Origin, ray.Direction * 800, params)
+        if not hit or not hit.Instance then return end
+        local model = hit.Instance:FindFirstAncestorOfClass("Model")
+        local hum   = model and model:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        local isEnemy = false
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character == model and p ~= LocalPlayer then isEnemy = true; break end
         end
+        if not isEnemy then return end
+        _tbLastFire = os.clock()
+        local dir = (hit.Position - ray.Origin).Unit
+        task.spawn(function()
+            GunFire:FireServer(ray.Origin, hit.Position, dir)
+        end)
     end))
 end
 
