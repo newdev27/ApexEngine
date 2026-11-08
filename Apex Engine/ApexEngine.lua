@@ -1963,24 +1963,7 @@ do
         end))
     end
 
-    -- No Recoil
-    -- Layer 1: hook BindToRenderStep + UnbindFromRenderStep to intercept ALL Recoil_* binds
-    -- including guns equipped before injection and guns that rebind on reload.
-    if hookfunction and newcclosure then
-        local _origBTRS  = RunService.BindToRenderStep
-        local _origUBTRS = RunService.UnbindFromRenderStep
-        -- track wrapped names so unbind still works
-        local _wrappedRecoil = {}
-        hookfunction(_origBTRS, newcclosure(function(self, name, priority, fn)
-            if type(name) == "string" and name:sub(1, 7) == "Recoil_" then
-                _wrappedRecoil[name] = true
-                return _origBTRS(self, name, priority, newcclosure(function(dt)
-                    if not ApexEngine.Flags["no_recoil"] then fn(dt) end
-                end))
-            end
-            return _origBTRS(self, name, priority, fn)
-        end))
-    end
+    -- No Recoil (camera pitch-lock only)
 
     -- Layer 2: camera pitch-lock at Last priority — catches recoil from guns already
     -- equipped before the hook, and any executor that doesn't support hookfunction.
