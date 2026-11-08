@@ -23,6 +23,14 @@
       "created_at": 1794096028,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-WKECDW-3ZMPD6-AL": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "weekly",
+      "created_at": 1794138666,
+      "expires_at": 1794743466,
+      "note": ""
     }
   }
 }
