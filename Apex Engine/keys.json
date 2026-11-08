@@ -7,6 +7,22 @@
       "created_at": 0,
       "expires_at": 0,
       "note": "test free key - replace expires_at with real timestamp"
+    },
+    "APEX-LT4B2E-8QVW6A-T3": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794096028,
+      "expires_at": null,
+      "note": ""
+    },
+    "APEX-LTQVW2-YJWCW7-UP": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794096028,
+      "expires_at": null,
+      "note": ""
     }
   }
 }
