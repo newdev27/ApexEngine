@@ -1833,22 +1833,42 @@ do
 
     local _rapidFireActive = false
 
-    local _saHooked = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        if _saHooked or not GunFire or not hookfunction then return end
-        _saHooked = true
-        local orig = GunFire.FireServer
-        hookfunction(orig, newcclosure(function(self, ...)
+    -- Hook ALL RemoteEvent:FireServer calls via hookmetamethod so we catch every gun
+    -- regardless of which remote they use. The reference confirms the game uses GunFire
+    -- but we also catch any remote that passes 2+ Vector3 args as a fallback.
+    if hookmetamethod and newcclosure then
+        local _origNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if method ~= "FireServer" then return _origNamecall(self, ...) end
+            if not self:IsA("RemoteEvent") then return _origNamecall(self, ...) end
+
+            local name = self.Name
+            local isGunFire = name == "GunFire" or name == "Fire" or name == "Shoot"
+                or name == "BulletFire" or name == "ShootGun" or name == "FireGun"
+                or name == "GunShoot" or name == "WeaponFire" or name == "ShootEvent"
+                or name == "FireWeapon" or name == "FireBullet" or name == "BulletShoot"
+                or name == "ShotFired" or name == "PlayerShoot" or name == "ClientFire"
+            if not isGunFire then
+                -- fallback: check for 2+ Vector3 args
+                local a = {...}
+                local v3c = 0
+                for i = 1, math.min(#a, 6) do
+                    if typeof(a[i]) == "Vector3" then v3c += 1 end
+                    if v3c >= 2 then isGunFire = true; break end
+                end
+            end
+            if not isGunFire then return _origNamecall(self, ...) end
+
             local args = {...}
             local flags = ApexEngine.Flags
-            local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
+            local cam = workspace.CurrentCamera
+            local origin = (typeof(args[1]) == "Vector3") and args[1] or cam.CFrame.Position
 
-            -- Always Headshot / Instant Bullet: find closest head in FOV, redirect
+            -- Always Headshot / Instant Bullet
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
-                local cam = workspace.CurrentCamera
-                local vp  = cam.ViewportSize
+                local vp = cam.ViewportSize
                 local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-                local fovR = flags["sa_fov"] or 80
+                local fovR = flags["sa_fov"] or math.huge
                 local bestDist, bestHead = fovR, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
@@ -1865,7 +1885,6 @@ do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- move muzzle to just behind target so bullet arrives instantly
                         local delta = origin - targetPos
                         local muzzle = delta.Magnitude > 0.01 and (targetPos + delta.Unit * 2) or (targetPos + Vector3.new(0,0,2))
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = muzzle end
@@ -1873,48 +1892,42 @@ do
                     end
                     local dir = (targetPos - origin).Unit
                     if #args >= 3 and typeof(args[3]) == "Vector3" then args[3] = dir end
-                    if flags["bullet_tracers"] then
-                        task.spawn(drawBulletTracer, origin, targetPos)
-                    end
+                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
                     if flags["rapid_fire"] and not _rapidFireActive then
-                        local result = orig(self, table.unpack(args))
+                        local result = _origNamecall(self, table.unpack(args))
                         _rapidFireActive = true
                         task.spawn(function()
-                            local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                            for _ = 1, extra do
+                            for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                                 task.wait()
-                                task.spawn(function() orig(self, table.unpack(args)) end)
+                                task.spawn(function() _origNamecall(self, table.unpack(args)) end)
                             end
                             _rapidFireActive = false
                         end)
                         return result
                     end
-                    return orig(self, table.unpack(args))
+                    return _origNamecall(self, table.unpack(args))
                 end
             end
 
-            -- Silent Aim (toggle, improved: velocity prediction + closest in FOV)
+            -- Silent Aim
             if flags["sa_enabled"] then
                 if math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
                     local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
                     if target then
                         local part = getR6Part(target.char, partName)
-                        if part and typeof(origin) == "Vector3" then
+                        if part then
                             local vel = target.root.AssemblyLinearVelocity
-                            local dist = (part.Position - origin).Magnitude
-                            local travelTime = dist / 500
+                            local travelTime = (part.Position - origin).Magnitude / 500
                             local predicted = part.Position + vel * travelTime
-                            args[3] = (predicted - origin).Unit
-                            if flags["bullet_tracers"] then
-                                task.spawn(drawBulletTracer, origin, predicted)
-                            end
+                            if #args >= 3 then args[3] = (predicted - origin).Unit end
+                            if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, predicted) end
                         end
                     end
                 end
             end
 
-            -- No Spread: replace direction with clean (target - origin).Unit
+            -- No Spread
             if flags["no_spread"] and not _rapidFireActive then
                 local target = getClosestEnemy(flags["sa_part"] or "Head", flags["sa_fov"] or 80)
                 if target then
@@ -1925,34 +1938,32 @@ do
                 end
             end
 
-            -- Bullet Tracers (no redirect, just visual)
+            -- Bullet Tracers standalone
             if flags["bullet_tracers"] and typeof(args[3]) == "Vector3" then
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
                 params.FilterDescendantsInstances = {LocalPlayer.Character}
                 local hit = workspace:Raycast(origin, args[3] * 900, params)
-                local endPos = hit and hit.Position or (origin + args[3] * 900)
-                task.spawn(drawBulletTracer, origin, endPos)
+                task.spawn(drawBulletTracer, origin, hit and hit.Position or (origin + args[3] * 900))
             end
 
             -- Rapid Fire standalone
             if flags["rapid_fire"] and not _rapidFireActive then
-                local result = orig(self, table.unpack(args))
+                local result = _origNamecall(self, table.unpack(args))
                 _rapidFireActive = true
                 task.spawn(function()
-                    local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                    for _ = 1, extra do
+                    for _ = 1, math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1) do
                         task.wait()
-                        task.spawn(function() orig(self, table.unpack(args)) end)
+                        task.spawn(function() _origNamecall(self, table.unpack(args)) end)
                     end
                     _rapidFireActive = false
                 end)
                 return result
             end
 
-            return orig(self, table.unpack(args))
+            return _origNamecall(self, table.unpack(args))
         end))
-    end))
+    end
 
     -- No Recoil
     -- Layer 1: hook RunService.BindToRenderStep so every "Recoil_*" bind the gun scripts
@@ -2236,14 +2247,15 @@ do
         d.boxRight.BackgroundColor3 = col
     end
 
-    -- Draw tracer line from origin point to target screen pos
-    local function drawTracer(d, tx, ty, col, origin)
+    -- Draw tracer line from origin to target screen pos
+    -- Uses midpoint positioning so rotation is accurate regardless of direction
+    local function drawTracer(d, tx, ty, col, originMode)
         local cam = workspace.CurrentCamera
         local vp  = cam.ViewportSize
         local ox, oy
-        if origin == "Center" then
+        if originMode == "Center" then
             ox, oy = vp.X/2, vp.Y/2
-        elseif origin == "Mouse" then
+        elseif originMode == "Mouse" then
             local mp = UserInputService:GetMouseLocation()
             ox, oy = mp.X, mp.Y
         else
@@ -2252,7 +2264,9 @@ do
         local dx, dy = tx - ox, ty - oy
         local len = math.sqrt(dx*dx + dy*dy)
         if len < 1 then d.tracer.Visible = false; return end
-        d.tracer.Position         = UDim2.fromOffset(ox, oy)
+        -- anchor at center so rotation pivots correctly
+        d.tracer.AnchorPoint      = Vector2.new(0.5, 0.5)
+        d.tracer.Position         = UDim2.fromOffset((ox + tx) / 2, (oy + ty) / 2)
         d.tracer.Size             = UDim2.fromOffset(len, 1)
         d.tracer.Rotation         = math.deg(math.atan2(dy, dx))
         d.tracer.BackgroundColor3 = col
@@ -2423,7 +2437,8 @@ do
                             local len = math.sqrt(dx*dx+dy*dy)
                             if len >= 1 then
                                 local col = flags["tl_col"] or Color3.fromRGB(255,50,50)
-                                d.targetLine.Position         = UDim2.fromOffset(ox, oy)
+                                d.targetLine.AnchorPoint      = Vector2.new(0.5, 0.5)
+                                d.targetLine.Position         = UDim2.fromOffset((ox+tx)/2, (oy+ty)/2)
                                 d.targetLine.Size             = UDim2.fromOffset(len, 1)
                                 d.targetLine.Rotation         = math.deg(math.atan2(dy, dx))
                                 d.targetLine.BackgroundColor3 = col
@@ -2747,10 +2762,11 @@ do
         local col   = flags["snap_col"]   or Color3.fromRGB(255,200,0)
         local thick = flags["snap_thick"] or 1
         snapLine.BackgroundColor3 = col
-        snapLine.Position  = UDim2.fromOffset(ox, oy)
-        snapLine.Size      = UDim2.fromOffset(len, thick)
-        snapLine.Rotation  = math.deg(math.atan2(dy, dx))
-        snapLine.Visible   = true
+        snapLine.AnchorPoint  = Vector2.new(0.5, 0.5)
+        snapLine.Position     = UDim2.fromOffset((ox + tx) / 2, (oy + ty) / 2)
+        snapLine.Size         = UDim2.fromOffset(len, thick)
+        snapLine.Rotation     = math.deg(math.atan2(dy, dx))
+        snapLine.Visible      = true
     end))
 end
 
