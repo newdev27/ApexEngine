@@ -1997,26 +1997,28 @@ do
         end))
     end)
 
-    -- No Recoil (camera pitch-lock only)
-
-    -- Layer 2: camera pitch-lock at Last priority — catches recoil from guns already
-    -- equipped before the hook, and any executor that doesn't support hookfunction.
-    -- Widened threshold (0.15 rad ~8.6°) covers high-recoil weapons.
-    -- Also cancels any upward yaw-coupled recoil patterns (some guns kick diagonally).
+    -- No Recoil — runs at Last+1 so it fires AFTER ClientGun's recoil step (Last-4)
+    -- and AFTER the aimbot (Last). Widened to 0.35 rad covers all weapons including
+    -- VintageSmg. Yaw guard removed — diagonal recoil patterns need full cancellation.
     local _nrPitch = 0
     local _nrYaw   = 0
-    RunService:BindToRenderStep("ApexNoRecoil", Enum.RenderPriority.Last.Value, function()
+    RunService:BindToRenderStep("ApexNoRecoil", Enum.RenderPriority.Last.Value + 1, function()
         local cam = workspace.CurrentCamera
+        -- Don't interfere when Fly/FreeCam own the camera
+        if cam.CameraType == Enum.CameraType.Scriptable then
+            local cf2 = cam.CFrame
+            local rx2, ry2 = cf2:ToEulerAnglesYXZ()
+            _nrPitch = rx2; _nrYaw = ry2
+            return
+        end
         local cf  = cam.CFrame
         local rx, ry = cf:ToEulerAnglesYXZ()
         if not ApexEngine.Flags["no_recoil"] then
             _nrPitch = rx; _nrYaw = ry; return
         end
         local dp = rx - _nrPitch
-        local dyaw = math.abs(ry - _nrYaw)
-        -- cancel upward pitch jumps up to 0.20 rad with yaw coupling guard (<0.12 rad)
-        -- widened to cover VintageSmg and other high-recoil diagonal patterns
-        if dp < 0 and math.abs(dp) < 0.20 and dyaw < 0.12 then
+        -- Cancel any upward pitch kick up to 0.35 rad (~20°), no yaw guard
+        if dp < 0 and math.abs(dp) < 0.35 then
             cam.CFrame = CFrame.new(cf.Position)
                 * CFrame.Angles(0, _nrYaw, 0)
                 * CFrame.Angles(_nrPitch, 0, 0)
@@ -2025,17 +2027,33 @@ do
         end
     end)
 
-    -- Aimbot (toggle, improved: distance-based velocity prediction)
-    -- Guard: skip if FreeCam or Fly is active (they own the camera)
+    -- Aimbot — uses Scriptable camera so the CFrame write actually sticks.
+    -- Restores CameraType to Custom when disabled so the gun can fire normally.
+    local _abWasScriptable = false
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
-        if not flags["ab_enabled"] then return end
-        if flags["m_freecam"] or flags["m_fly"] then return end
         local cam = workspace.CurrentCamera
-        if cam.CameraType == Enum.CameraType.Scriptable then return end
+        if not flags["ab_enabled"] then
+            -- Restore camera if we left it Scriptable
+            if _abWasScriptable then
+                _abWasScriptable = false
+                cam.CameraType = Enum.CameraType.Custom
+            end
+            return
+        end
+        if flags["m_freecam"] or flags["m_fly"] then return end
+        -- Don't fight FreeCam/Fly/ThirdPerson scriptable cameras
+        if cam.CameraType == Enum.CameraType.Scriptable and not _abWasScriptable then return end
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
-        if not target then return end
+        if not target then
+            -- No target — restore camera so gun fires
+            if _abWasScriptable then
+                _abWasScriptable = false
+                cam.CameraType = Enum.CameraType.Custom
+            end
+            return
+        end
         local part = getR6Part(target.char, partName)
         if not part then return end
         local targetPos = part.Position
@@ -2046,6 +2064,11 @@ do
         end
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
+        -- Switch to Scriptable so our CFrame write persists
+        if cam.CameraType ~= Enum.CameraType.Scriptable then
+            cam.CameraType = Enum.CameraType.Scriptable
+            _abWasScriptable = true
+        end
         local lerpFactor = math.clamp(1 - math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1), 0.02, 0.98)
         local w = cam.CFrame
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
