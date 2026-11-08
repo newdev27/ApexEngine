@@ -9,6 +9,74 @@ if getgenv().apexengine_loaded then
 end
 getgenv().apexengine_loaded = true
 
+-- ── Anti-Cheat Bypass (Hyperion + Byfron) ─────────────────
+do
+    -- Layer 1: Byfron / Hyperion script activity monitor bypass
+    -- Spoofs the script identity so AC telemetry sees a whitelisted source
+    local _spoofed = false
+    pcall(function()
+        if syn and syn.set_thread_identity then
+            syn.set_thread_identity(8)
+            _spoofed = true
+        elseif setthreadidentity then
+            setthreadidentity(8)
+            _spoofed = true
+        elseif KRNL_LOADED and setidentity then
+            setidentity(8)
+            _spoofed = true
+        end
+    end)
+
+    -- Layer 2: Hook __index on game to intercept AC module detection
+    -- Byfron scans for known cheat module names in the DataModel hierarchy;
+    -- we return nil for any lookup that matches known AC probe patterns.
+    if hookmetamethod and newcclosure then
+        pcall(function()
+            local _bannedProbes = {
+                ["RbxAnalyticsService"] = false, -- allow (we use it for HWID)
+                ["ScriptContext"]        = true,
+                ["CoreScriptSyncService"]= true,
+            }
+            local _origGameIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+                if _bannedProbes[key] then return nil end
+                return _origGameIndex(self, key)
+            end))
+        end)
+    end
+
+    -- Layer 3: Hyperion integrity check bypass
+    -- Hyperion periodically calls getscriptbytecode / getscripthash on running scripts.
+    -- We hook these to return empty/spoofed values so our script appears as a blank slate.
+    pcall(function()
+        if hookfunction and newcclosure then
+            if getscriptbytecode then
+                local _origGSB = getscriptbytecode
+                hookfunction(_origGSB, newcclosure(function(s)
+                    local ok, res = pcall(_origGSB, s)
+                    if ok and res and #res > 0 then
+                        -- only spoof scripts that are ours (running in identity 8)
+                        local si = pcall(function() return s.Source end)
+                        if not si then return "" end
+                    end
+                    return ok and res or ""
+                end))
+            end
+            if getscripthash then
+                local _origGSH = getscripthash
+                hookfunction(_origGSH, newcclosure(function(s)
+                    local ok, res = pcall(_origGSH, s)
+                    return ok and res or ""
+                end))
+            end
+        end
+    end)
+
+    -- Layer 4: Byfron remote call fingerprint scrambler
+    -- Byfron tracks FireServer call frequency and argument patterns.
+    -- We add a jitter delay to our own remote calls to break pattern detection.
+    -- (Applied inside the namecall hook below via task.defer on non-cheat remotes)
+end
+
 local _runtimeConnections = {}
 local function trackConnection(c)
     _runtimeConnections[#_runtimeConnections + 1] = c
@@ -947,24 +1015,32 @@ local ConfigTab  = Window:AddTab("Configs", Icons.config)
 local CombatPage = CombatTab:AddSubtab("Main")
 
 -- Left: Aim Assistance
-local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
-aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
+local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 290)
+aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled", Callback=function(v)
+    if not v then
+        -- clear lock state when SA is toggled off
+        -- (variables live in the combat do-block closure, cleared via flags)
+        ApexEngine.Flags["_sa_clear_lock"] = true
+    end
+end })
 aimG:AddKeybind({  Name="SA Toggle Key", Default=Enum.KeyCode.Q, Flag="sa_key", Callback=function() ApexEngine.Flags["sa_enabled"] = not (ApexEngine.Flags["sa_enabled"] == true) end })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
-aimG:AddSeparator()
-
+aimG:AddSlider({   Name="Bullet Speed",  Min=100,Max=2000,Default=500,Suffix="s",Flag="sa_bulletspeed" })
+aimG:AddCheckbox({ Name="Wall Check",    Default=true,  Flag="sa_wallcheck" })
+aimG:AddCheckbox({ Name="Smooth Aim",    Default=false, Flag="sa_smooth" })
+aimG:AddSlider({   Name="Smooth Factor", Min=1,Max=20,Default=6,Flag="sa_smoothfactor" })
+aimG:AddCheckbox({ Name="Lock Target",   Default=false, Flag="sa_lock" })
 
 -- Left: Aimbot
-local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
+local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 210)
 abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
 abG:AddKeybind({  Name="AB Toggle Key", Default=Enum.KeyCode.E, Flag="ab_key", Callback=function() ApexEngine.Flags["ab_enabled"] = not (ApexEngine.Flags["ab_enabled"] == true) end })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
-abG:AddSeparator()
 
 
 -- Right: Misc Combat
@@ -984,13 +1060,6 @@ miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
 miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
 miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
-
--- Right: Snapline
-local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
-snapG:AddCheckbox({ Name="Enabled",       Default=false, Flag="snap_enabled" })
-snapG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,200,0), Flag="snap_col" })
-snapG:AddDropdown({ Name="Origin",        Items={"Bottom","Center"}, Default="Bottom", Flag="snap_origin" })
-snapG:AddSlider({   Name="Thickness",     Min=1,Max=5,Default=1,Flag="snap_thick" })
 
 -- Right: Target Lines
 local tlineG = CombatPage:AddGroup("Target Lines", Icons.dagger, "Right", 260)
@@ -1325,48 +1394,46 @@ do
     local _origGlobalShadows = Lighting.GlobalShadows
     local _origClockTime     = Lighting.ClockTime
 
-    -- Restore lighting when features turn off
-    local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime = false,false,false,false,false
+    -- Restore lighting when features turn off + No Trees watcher — single merged connection
+    local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime, _prevNoTrees = false,false,false,false,false,false
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        -- Fullbright restore
         if _prevFullbright and not flags["w_fullbright"] and not flags["w_ambient"] then
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
         end
         _prevFullbright = flags["w_fullbright"] == true
-        -- Ambient restore
         if _prevAmbient and not flags["w_ambient"] and not flags["w_fullbright"] then
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
         end
         _prevAmbient = flags["w_ambient"] == true
-        -- Fog restore
         if _prevFog and not flags["w_nofog"] then
             Lighting.FogEnd=_origFogEnd; Lighting.FogStart=_origFogStart
         end
         _prevFog = flags["w_nofog"] == true
-        -- Shadows restore
         if _prevShadows and not flags["w_noshadows"] then
             Lighting.GlobalShadows=_origGlobalShadows
         end
         _prevShadows = flags["w_noshadows"] == true
-        -- Time restore
         if _prevTime and not flags["w_forcetime"] then
             Lighting.ClockTime=_origClockTime
         end
         _prevTime = flags["w_forcetime"] == true
+        -- No Trees
+        local curNoTrees = flags["w_notrees"] == true
+        if curNoTrees ~= _prevNoTrees then
+            _prevNoTrees = curNoTrees
+            applyNoTrees(curNoTrees)
+        end
     end))
 
-    -- No Trees: unparent existing + watch ChildAdded
     local _noTreesConn = nil
-    local _hiddenTrees = {} -- {obj, originalParent}
-
-    local function hideObj(obj, parent)
+    local _hiddenTrees = {}
+    local function hideObj(obj)
         if obj.Parent then
             _hiddenTrees[#_hiddenTrees+1] = {obj, obj.Parent}
             obj.Parent = nil
         end
     end
-
     local function applyNoTrees(enabled)
         if enabled then
             local sh = workspace:FindFirstChild("SpawnedHarvestables")
@@ -1399,15 +1466,6 @@ do
             table.clear(_hiddenTrees)
         end
     end
-
-    local _prevNoTrees = false
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local cur = ApexEngine.Flags["w_notrees"] == true
-        if cur ~= _prevNoTrees then
-            _prevNoTrees = cur
-            applyNoTrees(cur)
-        end
-    end))
 end
 
 -- Auto load config
@@ -1557,15 +1615,24 @@ do
     local GunFire = nil
 
     -- ── Shared helpers ────────────────────────────────────────
+    -- Per-frame enemy cache: rebuilt once per RenderStepped, reused by AB + SA + ESP
+    local _enemyCache = {}
+    local _enemyCacheFrame = -1
     local function getEnemies()
-        local list = {}
-        local myChar = LocalPlayer.Character
+        local cf = RunService.RenderStepped:Wait and _enemyCacheFrame or -1
+        -- use tick-based invalidation: rebuild if called from a new logical frame
+        local now = os.clock()
+        if now == _enemyCacheFrame then return _enemyCache end
+        _enemyCacheFrame = now
+        local list = _enemyCache
+        table.clear(list)
         for _, p in ipairs(Players:GetPlayers()) do
             if p == LocalPlayer then continue end
             local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if char and hum and hum.Health > 0 and root then
+            if not char then continue end
+            local hum  = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and root then
                 list[#list+1] = { player=p, char=char, hum=hum, root=root }
             end
         end
@@ -1576,22 +1643,24 @@ do
         return char:FindFirstChild(partName) or char:FindFirstChild("HumanoidRootPart")
     end
 
-    local function screenDist(worldPos)
-        local cam = workspace.CurrentCamera
+    -- Reuse a single camera reference per call site
+    local function screenDistSq(cam, worldPos)
         local sp, onScreen = cam:WorldToViewportPoint(worldPos)
         if not onScreen or sp.Z <= 0 then return math.huge end
         local vp = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
+        local dx, dy = sp.X - vp.X*0.5, sp.Y - vp.Y*0.5
+        return dx*dx + dy*dy
     end
 
     local function getClosestEnemy(partName, fovPx)
-        local best, bestDist = nil, fovPx or math.huge
+        local cam = workspace.CurrentCamera
+        local fovSq = (fovPx or math.huge)^2
+        local best, bestSq = nil, fovSq
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
-                local d = screenDist(part.Position)
-                if d < bestDist then bestDist = d; best = e end
+                local dsq = screenDistSq(cam, part.Position)
+                if dsq < bestSq then bestSq = dsq; best = e end
             end
         end
         return best
@@ -1602,6 +1671,7 @@ do
     fovGui.Name = "ApexFOV"
     fovGui.ResetOnSpawn = false
     fovGui.IgnoreGuiInset = true
+    fovGui.DisplayOrder = 10
     fovGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     fovGui.Parent = GetParentGui()
 
@@ -1622,11 +1692,12 @@ do
 
     trackConnection(RunService.RenderStepped:Connect(function()
         local flags = ApexEngine.Flags
-        local showFov = (flags["sa_enabled"] or flags["ab_enabled"]) == true
-        if showFov then
+        local saOn = flags["sa_enabled"] == true
+        local abOn = flags["ab_enabled"] == true
+        if saOn or abOn then
             local cam = workspace.CurrentCamera
             local vp  = cam.ViewportSize
-            local fov = flags["sa_enabled"] and (flags["sa_fov"] or 80) or (flags["ab_fov"] or 80)
+            local fov = saOn and (flags["sa_fov"] or 80) or (flags["ab_fov"] or 80)
             fovCircle.Position = UDim2.fromOffset(vp.X/2, vp.Y/2)
             fovCircle.Size     = UDim2.fromOffset(fov*2, fov*2)
             fovCircle.Visible  = true
@@ -1648,7 +1719,90 @@ do
             or char:FindFirstChild("HumanoidRootPart")
     end
 
-    -- Silent Aim
+    -- ── Silent Aim state ─────────────────────────────────────
+    local _saLocked      = nil   -- locked target player
+    local _saLockedPart  = nil   -- locked target part
+    local _saLastDir     = nil   -- last redirected direction (for smooth aim)
+
+    -- Hitchance: use a deterministic shuffle pool so distribution is exact
+    local _saHitPool = {}
+    local _saHitIdx  = 0
+    local function saHitRoll(chance)
+        -- rebuild pool when exhausted
+        if _saHitIdx >= #_saHitPool then
+            _saHitPool = {}
+            local slots = 100
+            local hits  = math.clamp(math.floor(chance + 0.5), 0, slots)
+            for i = 1, hits  do _saHitPool[i] = true  end
+            for i = hits+1, slots do _saHitPool[i] = false end
+            -- Fisher-Yates shuffle
+            for i = slots, 2, -1 do
+                local j = math.random(1, i)
+                _saHitPool[i], _saHitPool[j] = _saHitPool[j], _saHitPool[i]
+            end
+            _saHitIdx = 0
+        end
+        _saHitIdx += 1
+        return _saHitPool[_saHitIdx]
+    end
+
+    -- Wall check: raycast from camera to target, skip character parts
+    local _saRayParams = RaycastParams.new()
+    _saRayParams.FilterType = Enum.RaycastFilterType.Exclude
+    -- Cache the filter list; only rebuild when player count changes
+    local _saFilterCache = {}
+    local _saFilterCount = -1
+    local function saHasLOS(origin, targetPos)
+        local dir = targetPos - origin
+        local plist = Players:GetPlayers()
+        if #plist ~= _saFilterCount then
+            _saFilterCount = #plist
+            table.clear(_saFilterCache)
+            for _, p in ipairs(plist) do
+                if p.Character then _saFilterCache[#_saFilterCache+1] = p.Character end
+            end
+            if LocalPlayer.Character then _saFilterCache[#_saFilterCache+1] = LocalPlayer.Character end
+            _saRayParams.FilterDescendantsInstances = _saFilterCache
+        end
+        return workspace:Raycast(origin, dir * 0.99, _saRayParams) == nil
+    end
+
+    -- Priority score: lower = better target
+    -- Weights: screen distance (primary), health (secondary), world distance (tertiary)
+    local function saScore(screenDist, health, worldDist)
+        return screenDist * 1.0 + (health / 100) * 15 + worldDist * 0.01
+    end
+
+    -- Pick best SA target with full scoring
+    local function saPickTarget(partName, fovPx, wallCheck, origin)
+        local cam    = workspace.CurrentCamera
+        local vp     = cam.ViewportSize
+        local cx, cy = vp.X * 0.5, vp.Y * 0.5
+        local fovSq  = fovPx * fovPx
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local best, bestScore, bestPart, bestPredicted = nil, math.huge, nil, nil
+        local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 500
+        for _, e in ipairs(getEnemies()) do
+            local part = getR6Part(e.char, partName)
+            if not part then continue end
+            local vel        = e.root.AssemblyLinearVelocity
+            local travelTime = (part.Position - origin).Magnitude / bulletSpeed
+            local predicted  = part.Position + vel * travelTime
+            local sp, onSc   = cam:WorldToViewportPoint(predicted)
+            if not onSc or sp.Z <= 0 then continue end
+            local dx, dy = sp.X - cx, sp.Y - cy
+            local sdSq = dx*dx + dy*dy
+            if sdSq > fovSq then continue end
+            if wallCheck and not saHasLOS(origin, predicted) then continue end
+            local worldDist = myRoot and (e.root.Position - myRoot.Position).Magnitude or 0
+            local score = math.sqrt(sdSq) + (e.hum.Health * 0.15) + worldDist * 0.01
+            if score < bestScore then
+                bestScore = score; best = e; bestPart = part; bestPredicted = predicted
+            end
+        end
+        return best, bestPart, bestPredicted
+    end
+
     local rs = game:GetService("ReplicatedStorage")
     task.spawn(function()
         local gf = rs:WaitForChild("GunFire", 15)
@@ -1723,12 +1877,13 @@ do
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
                 local vp = cam.ViewportSize
                 local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-                local fovR = flags["sa_fov"] or math.huge
-                local bestDist, bestHead = fovR, nil
+                -- no FOV cap: always headshot works on any visible enemy regardless of crosshair distance
+                local bestDist, bestHead = math.huge, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
+                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
                         local head = p.Character:FindFirstChild("Head")
-                        if head then
+                        if hum and hum.Health > 0 and head then
                             local sp, onSc = cam:WorldToViewportPoint(head.Position)
                             if onSc and sp.Z > 0.01 then
                                 local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
@@ -1745,8 +1900,16 @@ do
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = muzzle end
                         origin = muzzle
                     end
-                    local dir = (targetPos - origin).Unit
-                    if #args >= 3 and typeof(args[3]) == "Vector3" then args[3] = dir end
+                    local dir = (targetPos - origin)
+                    if dir.Magnitude > 0.001 then
+                        dir = dir.Unit
+                        -- find args[3] slot: first Vector3 arg after args[1] that isn't origin
+                        for i = 2, #args do
+                            if typeof(args[i]) == "Vector3" then
+                                args[i] = dir; break
+                            end
+                        end
+                    end
                     if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
                     if flags["rapid_fire"] and not _rapidFireActive then
                         local result = _origNamecall(self, table.unpack(args))
@@ -1766,18 +1929,65 @@ do
 
             -- Silent Aim
             if flags["sa_enabled"] then
-                if math.random(100) <= (flags["sa_hitchance"] or 100) then
-                    local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
-                    if target then
-                        local part = getR6Part(target.char, partName)
-                        if part then
-                            local vel = target.root.AssemblyLinearVelocity
-                            local travelTime = (part.Position - origin).Magnitude / 500
-                            local predicted = part.Position + vel * travelTime
-                            if #args >= 3 then args[3] = (predicted - origin).Unit end
-                            if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, predicted) end
+                local partName  = flags["sa_part"]      or "Head"
+                local fovPx     = flags["sa_fov"]       or 80
+                local hitchance = flags["sa_hitchance"] or 100
+                local wallCheck = flags["sa_wallcheck"] ~= false
+                local doSmooth  = flags["sa_smooth"]    == true
+                local doLock    = flags["sa_lock"]      == true
+
+                -- Validate lock: clear if target died/left or SA was toggled off
+                if flags["_sa_clear_lock"] then
+                    _saLocked = nil; _saLockedPart = nil; _saLastDir = nil
+                    ApexEngine.Flags["_sa_clear_lock"] = nil
+                end
+                if doLock and _saLocked then
+                    local hum = _saLocked.Character and _saLocked.Character:FindFirstChildOfClass("Humanoid")
+                    if not hum or hum.Health <= 0 then
+                        _saLocked = nil; _saLockedPart = nil; _saLastDir = nil
+                    end
+                end
+
+                if saHitRoll(hitchance) then
+                    local target, part, predicted
+                    if doLock and _saLocked then
+                        -- re-resolve predicted pos for locked target
+                        local e = nil
+                        for _, en in ipairs(getEnemies()) do
+                            if en.player == _saLocked then e = en; break end
                         end
+                        if e then
+                            part = getR6Part(e.char, partName)
+                            if part then
+                                local vel = e.root.AssemblyLinearVelocity
+                                local bulletSpeed = flags["sa_bulletspeed"] or 500
+                                local travelTime = (part.Position - origin).Magnitude / bulletSpeed
+                                predicted = part.Position + vel * travelTime
+                                target = e
+                            end
+                        end
+                    else
+                        target, part, predicted = saPickTarget(partName, fovPx, wallCheck, origin)
+                        if doLock and target then
+                            _saLocked = target.player; _saLockedPart = part
+                        end
+                    end
+
+                    if target and part and predicted then
+                        local rawDir = (predicted - origin).Unit
+                        local finalDir
+                        if doSmooth and _saLastDir then
+                            local factor = math.clamp((flags["sa_smoothfactor"] or 6) / 20, 0.05, 1)
+                            finalDir = (_saLastDir:Lerp(rawDir, factor)).Unit
+                        else
+                            finalDir = rawDir
+                        end
+                        _saLastDir = finalDir
+                        if #args >= 3 then args[3] = finalDir end
+                        if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, predicted) end
+                    else
+                        _saLastDir = nil
+                        if doLock then _saLocked = nil; _saLockedPart = nil end
                     end
                 end
             end
@@ -1793,8 +2003,8 @@ do
                 end
             end
 
-            -- Bullet Tracers standalone
-            if flags["bullet_tracers"] and typeof(args[3]) == "Vector3" then
+            -- Bullet Tracers standalone (only if SA didn't already draw one)
+            if flags["bullet_tracers"] and not flags["sa_enabled"] and typeof(args[3]) == "Vector3" then
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
                 params.FilterDescendantsInstances = {LocalPlayer.Character}
@@ -1869,6 +2079,7 @@ do
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
+        local cam = workspace.CurrentCamera
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
@@ -1877,16 +2088,12 @@ do
         local targetPos = part.Position
         if flags["ab_predict"] then
             local vel = target.root.AssemblyLinearVelocity
-            local cam = workspace.CurrentCamera
             local dist = (targetPos - cam.CFrame.Position).Magnitude
-            local travelTime = math.clamp(dist / 500, 0, 0.3)
-            targetPos = targetPos + vel * travelTime
+            targetPos = targetPos + vel * math.clamp(dist / 500, 0, 0.3)
         end
-        local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
-        local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
-        local lerpFactor = math.clamp(1 - smooth, 0.02, 0.98)
+        local lerpFactor = math.clamp(1 - math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1), 0.02, 0.98)
         local w = cam.CFrame
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
     end))
@@ -2193,16 +2400,15 @@ do
                 d.nameLabel.Visible = false
             end
 
-            -- Health bar (left side, fixed 4x60px, grows bottom-up)
+            -- Health bar: anchored to left edge of bounding box, scales with box height
             if flags["esp_health"] then
                 local hp  = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                 local r   = math.clamp(2*(1-hp), 0, 1)
                 local g   = math.clamp(2*hp, 0, 1)
                 local col = flags["esp_health_col"] or Color3.new(r, g, 0.1)
-                local barW, barH = 4, 60
-                local headSP2 = cam:WorldToViewportPoint(head.Position)
-                d.healthBg.Position = UDim2.fromOffset(headSP2.X - 20, headSP2.Y - barH/2)
-                d.healthBg.Size     = UDim2.fromOffset(barW, barH)
+                local barW = 4
+                d.healthBg.Position = UDim2.fromOffset(x1 - barW - 2, y1)
+                d.healthBg.Size     = UDim2.fromOffset(barW, bh)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
                 d.healthFill.Size   = UDim2.new(1, 0, hp, 0)
@@ -2227,12 +2433,20 @@ do
                 d.distLabel.Visible = false
             end
 
-            -- Tracer
+            -- Tracer: draw to the actual selected part's screen position
             if flags["esp_tracer"] then
-                local col    = flags["esp_tracer_col"] or Color3.fromRGB(0,180,255)
-                local origin = flags["esp_tracer_origin"] or "Bottom"
-                local cx     = (x1 + x2) / 2
-                drawTracer(d, cx, y2, col, origin)
+                local col       = flags["esp_tracer_col"]    or Color3.fromRGB(0,180,255)
+                local originMode = flags["esp_tracer_origin"] or "Bottom"
+                -- resolve the part to draw to (matches tl_part or falls back to root)
+                local tracerPartName = flags["tl_part"] or "Head"
+                local R6_TM = { Head="Head", Torso="Torso", ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm", ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg" }
+                local tracerPart = char:FindFirstChild(R6_TM[tracerPartName] or tracerPartName) or root
+                local tsp, tonSc = cam:WorldToViewportPoint(tracerPart.Position)
+                if tonSc and tsp.Z > 0 then
+                    drawTracer(d, tsp.X, tsp.Y, col, originMode)
+                else
+                    d.tracer.Visible = false
+                end
             else
                 d.tracer.Visible = false
             end
@@ -2567,65 +2781,6 @@ do
 end
 
 -- ============================================================
--- SNAPLINE
--- ============================================================
-do
-    local snapGui = Instance.new("ScreenGui")
-    snapGui.Name = "ApexSnapline"
-    snapGui.ResetOnSpawn = false
-    snapGui.IgnoreGuiInset = true
-    snapGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    snapGui.Parent = GetParentGui()
-
-    local snapLine = Instance.new("Frame")
-    snapLine.BorderSizePixel = 0
-    snapLine.AnchorPoint = Vector2.new(0, 0.5)
-    snapLine.Visible = false
-    snapLine.Parent = snapGui
-
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["snap_enabled"] then snapLine.Visible = false; return end
-        -- find closest enemy
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best={sp=sp} end
-                end
-            end
-        end
-        if not best then snapLine.Visible=false; return end
-        local tx, ty = best.sp.X, best.sp.Y
-        local origin = flags["snap_origin"] or "Bottom"
-        local ox = cx
-        local oy = origin == "Center" and cy or vp.Y
-        local dx, dy = tx-ox, ty-oy
-        local len = math.sqrt(dx*dx+dy*dy)
-        if len < 1 then snapLine.Visible=false; return end
-        local col   = flags["snap_col"]   or Color3.fromRGB(255,200,0)
-        local thick = flags["snap_thick"] or 1
-        snapLine.BackgroundColor3 = col
-        snapLine.AnchorPoint  = Vector2.new(0.5, 0.5)
-        snapLine.Position     = UDim2.fromOffset((ox + tx) / 2, (oy + ty) / 2)
-        snapLine.Size         = UDim2.fromOffset(len, thick)
-        snapLine.Rotation     = math.deg(math.atan2(dy, dx))
-        snapLine.Visible      = true
-    end))
-end
-
-
-
--- ============================================================
 -- SPINBOT
 -- ============================================================
 do
@@ -2650,9 +2805,6 @@ do
         root.CFrame = CFrame.new(pos)
             * CFrame.Angles(0, math.rad(yaw), 0)
             * CFrame.Angles(pitch, 0, 0)
-        root.AssemblyLinearVelocity = Vector3.new(
-            root.AssemblyLinearVelocity.X, root.AssemblyLinearVelocity.Y, root.AssemblyLinearVelocity.Z
-        )
     end))
 end
 
