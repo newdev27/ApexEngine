@@ -10,7 +10,7 @@ end
 getgenv().apexengine_loaded = true
 
 -- ── Key system config ─────────────────────────────────────
-local SALT          = "apxe_s4lt_2025"
+local SALT          = "AX_br27_$3cr3t_2k25"
 local KEYS_URL      = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json"
 local DISCORD_INVITE = "discord.gg/apexengine"
 local KEY_FILE      = "ApexEngine/key.txt"
