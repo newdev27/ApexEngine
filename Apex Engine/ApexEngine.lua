@@ -9,6 +9,32 @@ if getgenv().apexengine_loaded then
 end
 getgenv().apexengine_loaded = true
 
+-- ── Key system config ─────────────────────────────────────
+local SALT          = "apxe_s4lt_2025"
+local KEYS_URL      = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/keys.json"
+local DISCORD_INVITE = "discord.gg/apexengine"
+local KEY_FILE      = "ApexEngine/key.txt"
+local HWID_FILE     = "ApexEngine/hwid.txt"
+
+local function getHWID()
+    -- Use executor HWID if available, otherwise fall back to UserId
+    if identifyexecutor then
+        local ok, id = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
+        if ok and id and id ~= "" then return id end
+    end
+    return tostring(game:GetService("Players").LocalPlayer.UserId)
+end
+
+local function readFile(path)
+    if isfile and isfile(path) then
+        local ok, v = pcall(readfile, path)
+        return ok and v or nil
+    end
+end
+local function writeFile(path, data)
+    pcall(writefile, path, data or "")
+end
+
 local _runtimeConnections = {}
 local function trackConnection(c)
     _runtimeConnections[#_runtimeConnections + 1] = c
