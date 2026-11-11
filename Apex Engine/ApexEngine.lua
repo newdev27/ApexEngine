@@ -122,24 +122,8 @@ local function GetParentGui()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- ── Key system ────────────────────────────────────────────
-local KEY_FILE  = "ApexEngine/key.dat"
-local HWID_FILE = "ApexEngine/hwid.dat"
-local KEYS_URL  = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json"
-local SALT      = "AX_br27_$3cr3t_2k25"
-local DISCORD_INVITE = "discord.gg/apexengine"
+-- ── Octohook UI Library Start ──
 
-local function getHWID()
-    local ok, id = pcall(function() return tostring(game:GetService("RbxAnalyticsService"):GetClientId()) end)
-    return (ok and id or "unknown") .. "_" .. tostring(LocalPlayer.UserId)
-end
-local function readFile(path)
-    if isfile and isfile(path) then return readfile(path) end
-    return nil
-end
-local function writeFile(path, data)
-    if writefile then writefile(path, data) end
-end
 
 local function validFormat(key)
     return key ~= nil and type(key) == "string"
@@ -1032,6 +1016,7 @@ local espR = VisualPage:AddGroup("Extra", Icons.ghost, "Right", 340)
 espR:AddCheckbox({ Name="Tracers",        Default=false, Flag="esp_tracer" })
 espR:AddColorPicker({ Name="Tracer Color",Default=Color3.fromRGB(0,180,255),   Flag="esp_tracer_col" })
 espR:AddDropdown({ Name="Tracer Origin",  Items={"Bottom","Center","Mouse"},   Default="Bottom", Flag="esp_tracer_origin" })
+espR:AddDropdown({ Name="Tracer Part",    Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Torso", Flag="esp_tracer_part" })
 espR:AddSeparator()
 espR:AddCheckbox({ Name="Highlight",      Default=false, Flag="esp_chams" })
 espR:AddColorPicker({ Name="Fill Color",  Default=Color3.fromRGB(255,60,90),   Flag="esp_fill_col" })
@@ -1202,151 +1187,6 @@ end })
 cfgLeft:AddButton({ Name="Delete", Callback=function()
     local name=ApexEngine.Flags["cfg_sel"]; if not name or name=="" then return end
     pcall(function() delfile(CFG_FOLDER.."/"..name..".json") end); cfgDrop:Refresh(listConfigs())
-end })
-
--- ── Key Manager group (right side of Configs tab) ──────────
-local KEYGEN_URL = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/KeyGenerator.lua"
-
--- Lazy-load KeyGenerator module once
-local _kg = nil
-local function getKG()
-    if _kg then return _kg end
-    local ok, result = pcall(function()
-        return loadstring(game:HttpGet(KEYGEN_URL .. "?t=" .. os.time()))()
-    end)
-    if ok and type(result) == "table" then _kg = result; return _kg end
-    warn("[ApexEngine] Failed to load KeyGenerator: " .. tostring(result))
-    return nil
-end
-
-local keyMgrG = ConfigPage:AddGroup("Key Manager", Icons.crown, "Right", 340)
-
--- Caller username input (TextBox row)
-local _callerName = ""
-do
-    local r = (function()
-        -- inline row since we're outside AddGroup's closure; use AddLabel as spacer then overlay a TextBox
-        -- We use AddButton trick: store ref via Label + manual TextBox
-        return nil
-    end)()
-end
-
--- We need a TextBox for caller name and target name — use AddLabel + manual approach
--- Since AddGroup only exposes AddCheckbox/Slider/etc, we use two AddButton callbacks
--- that read from a shared _callerName / _targetName updated via a TextBox we inject.
-
--- Inject caller TextBox via AddLabel (returns the label; we replace it)
-local _callerLbl  = keyMgrG:AddLabel("Caller: (not set)")
-local _targetLbl  = keyMgrG:AddLabel("Target: (not set)")
-local _statusLbl  = keyMgrG:AddLabel("")
-
-local _callerName = ""
-local _targetName = ""
-
--- Tier dropdown
-local _tierDrop = keyMgrG:AddDropdown({
-    Name  = "Tier",
-    Items = { "free", "1day", "weekly", "monthly", "yearly", "lifetime", "1hr", "1min" },
-    Default = "free",
-    Flag  = "kg_tier",
-})
-
--- Amount slider
-keyMgrG:AddSlider({ Name="Amount", Min=1, Max=10, Default=1, Flag="kg_amount" })
-
--- Set Caller button — opens a TextBox prompt via a ScreenGui overlay
-local function openNamePrompt(title, callback)
-    local pg = GetParentGui()
-    local overlay = New("ScreenGui", { Name="ApexPrompt", ResetOnSpawn=false,
-        ZIndexBehavior=Enum.ZIndexBehavior.Sibling, IgnoreGuiInset=true,
-        DisplayOrder=9999, Parent=pg })
-    New("Frame", { Size=UDim2.fromScale(1,1), BackgroundColor3=Color3.new(0,0,0),
-        BackgroundTransparency=0.55, BorderSizePixel=0, Parent=overlay })
-    local box = New("Frame", { AnchorPoint=Vector2.new(0.5,0.5),
-        Position=UDim2.fromScale(0.5,0.5), Size=UDim2.fromOffset(320,110),
-        BackgroundColor3=Theme.WindowBg, BorderSizePixel=0, Parent=overlay },
-        { Corner(10), Stroke() })
-    Label({ Text=title, Font=Theme.FontBold, TextSize=13,
-        Size=UDim2.new(1,-20,0,20), Position=UDim2.fromOffset(10,10), Parent=box })
-    local tb = New("TextBox", { BackgroundColor3=Theme.FrameInactive, BorderSizePixel=0,
-        ClearTextOnFocus=false, Font=Theme.Font, TextSize=12,
-        PlaceholderText="type name...", PlaceholderColor3=Theme.TextDisabled,
-        Text="", TextColor3=Theme.Text,
-        Size=UDim2.new(1,-20,0,30), Position=UDim2.fromOffset(10,38), Parent=box },
-        { Corner(6), Stroke(Theme.Border,0.6) })
-    New("UIPadding", { PaddingLeft=UDim.new(0,8), Parent=tb })
-    local ok = New("TextButton", { BackgroundColor3=Theme.Accent, AutoButtonColor=false,
-        Text="Confirm", Font=Theme.FontBold, TextSize=12,
-        TextColor3=Color3.fromRGB(8,8,8),
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.fromOffset(10,76), Parent=box }, { Corner(6) })
-    local cancel = New("TextButton", { BackgroundColor3=Theme.Button, AutoButtonColor=false,
-        Text="Cancel", Font=Theme.Font, TextSize=12, TextColor3=Theme.TextDisabled,
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.new(0.52,0,0,76), Parent=box }, { Corner(6) })
-    local function close(val)
-        overlay:Destroy()
-        if val and val ~= "" then callback(val) end
-    end
-    ok.MouseButton1Click:Connect(function() close(tb.Text:match("^%s*(.-)%s*$")) end)
-    cancel.MouseButton1Click:Connect(function() overlay:Destroy() end)
-    tb.FocusLost:Connect(function(enter) if enter then close(tb.Text:match("^%s*(.-)%s*$")) end end)
-    task.defer(function() tb:CaptureFocus() end)
-end
-
-keyMgrG:AddButton({ Name="Set Caller (your name)", Callback=function()
-    openNamePrompt("Enter your username (caller):", function(name)
-        _callerName = name:lower()
-        _callerLbl.Text = "Caller: " .. _callerName
-    end)
-end })
-
-keyMgrG:AddButton({ Name="Set Target (recipient)", Callback=function()
-    openNamePrompt("Enter recipient username:", function(name)
-        _targetName = name:lower()
-        _targetLbl.Text = "Target: " .. _targetName
-    end)
-end })
-
-keyMgrG:AddSeparator()
-
--- genkey button
-keyMgrG:AddButton({ Name="Generate Key", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    local tier   = ApexEngine.Flags["kg_tier"] or "free"
-    local amount = ApexEngine.Flags["kg_amount"] or 1
-    local note   = _targetName ~= "" and ("for " .. _targetName) or "manual"
-    local result = kg.genkey(_callerName, tier, note, amount)
-    if result then
-        local keys = {}
-        for k in pairs(result) do keys[#keys+1] = k end
-        _statusLbl.Text = "✓ " .. #keys .. "x " .. tier
-        -- copy first key to clipboard
-        local copy = setclipboard or toclipboard
-        if copy and #keys == 1 then pcall(copy, keys[1]) end
-    else
-        _statusLbl.Text = "Denied or invalid tier."
-    end
-end })
-
--- Grant permission button
-keyMgrG:AddButton({ Name="Grant Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.grantPermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Granted: " .. _targetName) or "Denied."
-end })
-
--- Revoke permission button
-keyMgrG:AddButton({ Name="Revoke Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.revokePermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Revoked: " .. _targetName) or "Denied."
 end })
 
 local cfgRight = ConfigPage:AddGroup("Interface", Icons.hammer, "Right", 210)
@@ -1831,6 +1671,38 @@ do
 
     local _rapidFireActive = false
 
+    -- ── Projectile redirect (SA v2) ───────────────────────────
+    -- Set when SA fires; consumed by DescendantAdded watcher
+    local _pendingRedirect = nil  -- { targetPart, expireAt }
+
+    -- Watch for ClientBullet added to workspace and redirect it toward the target
+    workspace.DescendantAdded:Connect(function(obj)
+        if not _pendingRedirect then return end
+        if os.clock() > _pendingRedirect.expireAt then _pendingRedirect = nil; return end
+        if obj.Name ~= "ClientBullet" then return end
+        local targetPart = _pendingRedirect.targetPart
+        _pendingRedirect = nil
+        if not targetPart or not targetPart.Parent then return end
+        -- Defer one frame so the game sets the bullet's initial velocity first
+        task.defer(function()
+            if not targetPart.Parent then return end
+            local bullet = obj:IsA("BasePart") and obj or (obj:IsA("Model") and obj.PrimaryPart)
+            if not bullet then return end
+            local targetPos = targetPart.Position
+            local speed = bullet.AssemblyLinearVelocity.Magnitude
+            if speed < 10 then speed = 300 end
+            local dir = (targetPos - bullet.Position).Unit
+            pcall(function()
+                bullet.CFrame = CFrame.new(bullet.Position, targetPos)
+                bullet.AssemblyLinearVelocity = dir * speed
+            end)
+        end)
+    end)
+
+    local function redirectProjectile(targetPart)
+        _pendingRedirect = { targetPart = targetPart, expireAt = os.clock() + 0.5 }
+    end
+
     local _saHooked = false
     trackConnection(RunService.Heartbeat:Connect(function()
         if _saHooked or not GunFire or not hookfunction then return end
@@ -1863,7 +1735,6 @@ do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- move muzzle to just behind target so bullet arrives instantly
                         local delta = origin - targetPos
                         local muzzle = delta.Magnitude > 0.01 and (targetPos + delta.Unit * 2) or (targetPos + Vector3.new(0,0,2))
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = muzzle end
@@ -1901,7 +1772,10 @@ do
                     if target then
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
+                            -- Layer 1: redirect the FireServer args (server-side direction)
                             args[3] = (part.Position - origin).Unit
+                            -- Layer 2: intercept the ClientBullet and physically redirect it
+                            redirectProjectile(part)
                             if flags["bullet_tracers"] then
                                 task.spawn(drawBulletTracer, origin, part.Position)
                             end
@@ -1910,14 +1784,10 @@ do
                 end
             end
 
-            -- No Spread: replace direction with clean (target - origin).Unit
-            if flags["no_spread"] and not _rapidFireActive then
-                local target = getClosestEnemy(flags["sa_part"] or "Head", flags["sa_fov"] or 80)
-                if target then
-                    local part = getR6Part(target.char, flags["sa_part"] or "Head")
-                    if part and #args >= 3 and typeof(args[3]) == "Vector3" then
-                        args[3] = (part.Position - origin).Unit
-                    end
+            -- No Spread: lock direction to exact camera look vector (no random offset)
+            if flags["no_spread"] then
+                if #args >= 3 and typeof(args[3]) == "Vector3" then
+                    args[3] = workspace.CurrentCamera.CFrame.LookVector
                 end
             end
 
@@ -2289,9 +2159,24 @@ do
             x1 -= pad; y1 -= pad; x2 += pad; y2 += pad
             local bw, bh = x2-x1, y2-y1
 
+            -- Visible check: raycast from camera to torso
+            local isVisible = false
+            do
+                local torso = char:FindFirstChild("Torso") or root
+                local camPos = cam.CFrame.Position
+                local dir = (torso.Position - camPos)
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = { LocalPlayer.Character, char }
+                local hit = workspace:Raycast(camPos, dir, params)
+                isVisible = hit == nil
+            end
+
             -- Box
             if flags["esp_box"] then
-                local col = flags["esp_box_col"] or Color3.new(1,1,1)
+                local col = isVisible
+                    and (flags["esp_box_col"] or Color3.new(1,1,1))
+                    or Color3.fromRGB(255, 50, 50)
                 drawBox(d, x1, y1, x2, y2, col, 1)
             else
                 d.boxFrame.Visible = false
@@ -2345,20 +2230,31 @@ do
                 d.distLabel.Visible = false
             end
 
-            -- Tracer
+            -- Tracer: draw to the actual selected aim part's screen position
             if flags["esp_tracer"] then
-                local col    = flags["esp_tracer_col"] or Color3.fromRGB(0,180,255)
-                local origin = flags["esp_tracer_origin"] or "Bottom"
-                local cx     = (x1 + x2) / 2
-                drawTracer(d, cx, y2, col, origin)
+                local col        = flags["esp_tracer_col"]    or Color3.fromRGB(0,180,255)
+                local originMode = flags["esp_tracer_origin"] or "Bottom"
+                local R6_TM = { Head="Head", Torso="Torso", ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm", ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg" }
+                local tPartName = flags["esp_tracer_part"] or "Torso"
+                local tPart = char:FindFirstChild(R6_TM[tPartName] or tPartName) or root
+                local tsp, tonSc = cam:WorldToViewportPoint(tPart.Position)
+                if tonSc and tsp.Z > 0 then
+                    drawTracer(d, tsp.X, tsp.Y, col, originMode)
+                else
+                    d.tracer.Visible = false
+                end
             else
                 d.tracer.Visible = false
             end
 
             -- Highlight / chams
             if flags["esp_chams"] then
-                local fillCol     = flags["esp_fill_col"]     or Color3.fromRGB(255,60,90)
-                local outlineCol  = flags["esp_outline_col"]  or Color3.new(1,1,1)
+                local fillCol     = isVisible
+                    and (flags["esp_fill_col"] or Color3.fromRGB(80,255,120))
+                    or Color3.fromRGB(255,60,60)
+                local outlineCol  = isVisible
+                    and (flags["esp_outline_col"] or Color3.new(1,1,1))
+                    or Color3.fromRGB(255,50,50)
                 local fillOpacity = (flags["esp_fill_opacity"] or 50) / 100
                 d.highlight.Adornee          = char
                 d.highlight.FillColor        = fillCol
@@ -2568,6 +2464,28 @@ do
         if hl then pcall(function() hl:Destroy() end); _xrayData[p] = nil end
     end
 
+    -- Track which parts we made transparent for restore
+    local _xrayTransparent = {} -- [BasePart] = originalTransparency
+
+    local function applyXrayTransparency(char, col)
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                if not _xrayTransparent[part] then
+                    _xrayTransparent[part] = part.Transparency
+                end
+                part.Transparency = 0.5
+                part.Color = col
+            end
+        end
+    end
+
+    local function restoreXrayTransparency()
+        for part, orig in pairs(_xrayTransparent) do
+            pcall(function() part.Transparency = orig end)
+        end
+        table.clear(_xrayTransparent)
+    end
+
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
         local enabled = flags["m_xray"] == true
@@ -2580,12 +2498,17 @@ do
             if enabled and char then
                 hl.Adornee = char
                 hl.FillColor = col
+                hl.FillTransparency = 0.4
                 hl.OutlineColor = col
+                hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 hl.Enabled = true
+                applyXrayTransparency(char, col)
             else
                 hl.Enabled = false
             end
         end
+        if not enabled then restoreXrayTransparency() end
         -- clean up
         for p in pairs(_xrayData) do
             if not p.Parent then removeXray(p) end
