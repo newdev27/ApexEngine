@@ -11,7 +11,7 @@ getgenv().apexengine_loaded = true
 
 -- ── Key system config ─────────────────────────────────────
 local SALT          = "apxe_s4lt_2025"
-local KEYS_URL      = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/keys.json"
+local KEYS_URL      = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/keys.json"
 local DISCORD_INVITE = "discord.gg/apexengine"
 local KEY_FILE      = "ApexEngine/key.txt"
 local HWID_FILE     = "ApexEngine/hwid.txt"
@@ -25,14 +25,20 @@ local function getHWID()
     return tostring(game:GetService("Players").LocalPlayer.UserId)
 end
 
+local _readfile  = readfile  or (getgenv and getgenv().readfile)  or nil
+local _writefile = writefile or (getgenv and getgenv().writefile) or nil
+local _isfile    = isfile    or (getgenv and getgenv().isfile)    or nil
+
 local function readFile(path)
-    if isfile and isfile(path) then
-        local ok, v = pcall(readfile, path)
-        return ok and v or nil
-    end
+    if not _readfile or not _isfile then return nil end
+    local ok, v = pcall(_isfile, path)
+    if not ok or not v then return nil end
+    local ok2, data = pcall(_readfile, path)
+    return ok2 and data or nil
 end
 local function writeFile(path, data)
-    pcall(writefile, path, data or "")
+    if not _writefile then return end
+    pcall(_writefile, path, data or "")
 end
 
 local _runtimeConnections = {}
