@@ -1796,9 +1796,7 @@ do
 
             -- Silent Aim
             if flags["sa_enabled"] then
-                local key = flags["sa_key"]
-                local keyHeld = (not key) or UserInputService:IsKeyDown(key)
-                if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
+                if math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
                     local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
                     if target then
@@ -1870,11 +1868,10 @@ do
         end
     end))
 
-    -- Aimbot
+    -- Aimbot (toggle, no hold)
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
@@ -2023,10 +2020,10 @@ do
         hText.TextStrokeTransparency = 0.3
         hText.TextStrokeColor3 = Color3.new(0,0,0)
         hText.Font = Enum.Font.GothamBold
-        hText.TextSize = 9
+        hText.TextSize = 8
         hText.TextXAlignment = Enum.TextXAlignment.Center
-        hText.Size = UDim2.new(3, 0, 0, 10)
-        hText.Position = UDim2.new(-1, 0, 0, -11)  -- above the bar
+        hText.Size = UDim2.new(1, 0, 0, 8)
+        hText.Position = UDim2.new(0, 0, 0, -9)  -- above the bar
         hText.Visible = false
         hText.Parent = hBg
         d.healthBg   = hBg
@@ -2050,6 +2047,7 @@ do
         tracerF.BorderSizePixel = 0
         tracerF.AnchorPoint = Vector2.new(0, 0.5)
         tracerF.Visible = false
+        tracerF.ZIndex = 5
         tracerF.Parent = espGui
         d.tracer = tracerF
 
@@ -2228,7 +2226,7 @@ do
                 d.nameLabel.Visible = false
             end
 
-            -- Health bar (left side, vertical, grows bottom-up)
+            -- Health bar (left side, vertical, fixed pixel height)
             if flags["esp_health"] then
                 local hp  = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
                 local r   = math.clamp(2*(1-hp), 0, 1)
@@ -2239,9 +2237,8 @@ do
                 d.healthBg.Size     = UDim2.fromOffset(barW, bh)
                 d.healthBg.Visible  = true
                 d.healthFill.BackgroundColor3 = col
-                d.healthFill.Size     = UDim2.new(1, 0, hp, 0)
-                -- AnchorPoint=(0,1) + Position=(0,0,1,0) means fill grows upward from bottom
-                d.healthText.Text    = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+                d.healthFill.Size   = UDim2.new(1, 0, hp, 0)
+                d.healthText.Text   = math.floor(hum.Health)
                 d.healthText.Visible = true
             else
                 d.healthBg.Visible   = false
@@ -2262,16 +2259,28 @@ do
                 d.distLabel.Visible = false
             end
 
-            -- Tracer: draw to the actual selected aim part's screen position
+            -- Tracer: line from screen origin to player torso screen pos
             if flags["esp_tracer"] then
                 local col        = flags["esp_tracer_col"]    or Color3.fromRGB(0,180,255)
                 local originMode = flags["esp_tracer_origin"] or "Bottom"
-                local R6_TM = { Head="Head", Torso="Torso", ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm", ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg" }
-                local tPartName = flags["esp_tracer_part"] or "Torso"
-                local tPart = char:FindFirstChild(R6_TM[tPartName] or tPartName) or root
+                local tPart = char:FindFirstChild("Torso") or root
                 local tsp, tonSc = cam:WorldToViewportPoint(tPart.Position)
                 if tonSc and tsp.Z > 0 then
-                    drawTracer(d, tsp.X, tsp.Y, col, originMode)
+                    local vp = cam.ViewportSize
+                    local ox = vp.X / 2
+                    local oy = originMode == "Center" and vp.Y/2 or (originMode == "Mouse" and UserInputService:GetMouseLocation().Y or vp.Y)
+                    local tx, ty = tsp.X, tsp.Y
+                    local dx, dy = tx - ox, ty - oy
+                    local len = math.sqrt(dx*dx + dy*dy)
+                    if len >= 1 then
+                        d.tracer.Position         = UDim2.fromOffset(ox, oy)
+                        d.tracer.Size             = UDim2.fromOffset(len, 1)
+                        d.tracer.Rotation         = math.deg(math.atan2(dy, dx))
+                        d.tracer.BackgroundColor3 = col
+                        d.tracer.Visible          = true
+                    else
+                        d.tracer.Visible = false
+                    end
                 else
                     d.tracer.Visible = false
                 end
@@ -2701,10 +2710,10 @@ end
 -- CAMLOCK
 -- ============================================================
 do
+    -- Camlock (toggle, no hold)
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_camlock"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
         local cam = workspace.CurrentCamera
         local vp  = cam.ViewportSize
         local cx, cy = vp.X/2, vp.Y/2
