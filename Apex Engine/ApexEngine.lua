@@ -1647,8 +1647,9 @@ do
         return best
     end
 
-    -- Physics-based prediction: pure travel time, no multiplier
-    local BULLET_SPEED = 500  -- studs/s (Brisk Survival default)
+    -- Physics-based prediction: 575 effective speed accounts for Roblox
+    -- network-replication pre-extrapolation on AssemblyLinearVelocity
+    local BULLET_SPEED = 575
     local function predictPos(partPos, vel, camPos)
         local dist = (partPos - camPos).Magnitude
         return partPos + vel * (dist / BULLET_SPEED)
