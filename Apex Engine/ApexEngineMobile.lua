@@ -1326,9 +1326,24 @@ do
         _ntTick+=dt;if _ntTick<0.5 then return end;_ntTick=0
         local cur=Flags.w_notrees==true
         if cur~=_prevNoTrees then _prevNoTrees=cur;applyNoTrees(cur) end
-        -- No Grass: force every 0.5s so terrain can't re-enable it
+    end))
+
+    -- No Grass: runs every frame so terrain can't re-enable it
+    track(RunService.Heartbeat:Connect(function()
+        if not Flags.w_nograss then return end
         local terrain=workspace:FindFirstChildOfClass("Terrain")
-        if terrain then terrain.Decoration=not(Flags.w_nograss==true) end
+        if terrain then terrain.Decoration=false end
+    end))
+
+    -- Restore grass when toggled off
+    local _prevGrass=false
+    track(RunService.Heartbeat:Connect(function()
+        local cur=Flags.w_nograss==true
+        if _prevGrass and not cur then
+            local terrain=workspace:FindFirstChildOfClass("Terrain")
+            if terrain then terrain.Decoration=true end
+        end
+        _prevGrass=cur
     end))
 end
 
