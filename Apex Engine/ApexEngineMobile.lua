@@ -87,6 +87,7 @@ local Flags = {
     crosshair_enabled=true, crosshair_col=Color3.new(1,1,1),
     crosshair_gap=4, crosshair_size=8, crosshair_thick=1,
     _fire_held=false,
+    tc_enabled=true,
 }
 
 -- ── Key system ────────────────────────────────────────────
@@ -500,6 +501,8 @@ do
 end
 makeSep("── Crosshair ──")
 makeToggle("Crosshair",         "crosshair_enabled")
+makeSep("── Team Check ──")
+makeToggle("Team Check",        "tc_enabled")
 makeSep("── Combat Visuals ──")
 makeToggle("X-Ray",             "m_xray")
 
@@ -661,8 +664,10 @@ local function getEnemies()
     if now-_enemyCacheTick < 0.05 then return _enemyCache end
     _enemyCacheTick=now
     local list={}
+    local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
     for _,p in ipairs(Players:GetPlayers()) do
         if p==LocalPlayer then continue end
+        if myClanId~=nil and p:GetAttribute("ClanId")==myClanId then continue end
         local char=p.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         local root=char and char:FindFirstChild("HumanoidRootPart")
