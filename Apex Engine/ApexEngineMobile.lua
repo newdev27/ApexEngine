@@ -81,6 +81,7 @@ local Flags = {
     wesp_maxdist=1000, wesp_turrets=false, wesp_storage=false,
     wesp_beds=false, wesp_barricades=false, wesp_other=false,
     w_fullbright=false, w_nofog=false, w_noshadows=false,
+    w_notrees=false, w_nograss=false,
     m_omnisprint=false, m_omnisprint_bonus=0,
     m_noclip=false, m_xray=false, m_xray_col=Color3.fromRGB(255,80,200),
     crosshair_enabled=true, crosshair_col=Color3.new(1,1,1),
@@ -206,6 +207,28 @@ local rootGui=New("ScreenGui",{Name="ApexMobileUI",ResetOnSpawn=false,
     IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Global,Parent=GetGui()})
 
 -- ══════════════════════════════════════════════════════════
+-- ESP TOGGLE BUTTON  (always visible, bottom-center)
+-- ══════════════════════════════════════════════════════════
+local espBtn=New("TextButton",{
+    Text="👁",
+    AnchorPoint=Vector2.new(0.5,1),
+    Position=UDim2.new(0.5,0,1,-sc(10)),
+    Size=UDim2.fromOffset(sc(48),sc(48)),
+    BackgroundColor3=T.On,
+    AutoButtonColor=false,
+    Font=Enum.Font.GothamBlack,
+    TextSize=sc(20),
+    TextColor3=Color3.new(1,1,1),
+    ZIndex=20,
+    Parent=rootGui,
+})
+Corner(sc(24),espBtn)
+espBtn.Activated:Connect(function()
+    Flags.esp_enabled=not Flags.esp_enabled
+    Tween(espBtn,0.15,{BackgroundColor3=Flags.esp_enabled and T.On or T.Off})
+end)
+
+-- ══════════════════════════════════════════════════════════
 -- OPEN / CLOSE BUTTON  (always visible, bottom-left)
 -- Tap it to show/hide the settings panel
 -- ══════════════════════════════════════════════════════════
@@ -255,10 +278,11 @@ end)
 abBtn.InputEnded:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
         Flags._fire_held=false
-        -- short tap (<0.3s) = toggle ab_enabled
         if os.clock()-_abHoldStart < 0.3 then
             Flags.ab_enabled = not Flags.ab_enabled
         end
+        -- clear sticky lock when button released
+        _stickyTarget=nil;_stickyLostAt=nil
         local col = Flags.ab_enabled and T.ABOn or T.ABOff
         Tween(abBtn,0.15,{BackgroundColor3=col,Size=UDim2.fromOffset(sc(56),sc(56))})
     end
@@ -444,11 +468,65 @@ makeSep("── Lighting ──")
 makeToggle("Full Bright",   "w_fullbright")
 makeToggle("No Fog",        "w_nofog")
 makeToggle("No Shadows",    "w_noshadows")
+makeSep("── Environment ──")
+makeToggle("No Leaves",     "w_notrees")
+makeToggle("No Grass",      "w_nograss")
 
 -- ── PLAYER TAB ────────────────────────────────────────────
 recTab="Player"
 makeSep("── Movement ──")
 makeToggle("Omni Sprint (Crouch)", "m_omnisprint")
+do
+    -- Speed slider: 16–100, default 24
+    Flags.m_omnisprint_bonus = 8  -- default bonus on top of base 16 = 24 total
+    local row=makeRow()
+    New("TextLabel",{Text="Sprint Speed",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=16,100
+    local function setSpeed(v)
+        v=math.clamp(math.floor(v+0.5),MIN,MAX)
+        Flags.m_omnisprint_bonus=v-16
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v)
+    end
+    setSpeed(24)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setSpeed(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setSpeed(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+end
 makeToggle("No Clip",              "m_noclip")
 makeSep("── Combat ──")
 makeToggle("Silent Aim",  "sa_enabled")
@@ -491,7 +569,12 @@ task.spawn(function()
         if crouchBtn then
             crouchBtn.InputBegan:Connect(function(i)
                 if i.UserInputType==Enum.UserInputType.Touch then
-                    Flags.m_omnisprint=not Flags.m_omnisprint
+                    Flags.m_omnisprint=true
+                end
+            end)
+            crouchBtn.InputEnded:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.Touch then
+                    Flags.m_omnisprint=false
                 end
             end)
         end
@@ -519,12 +602,12 @@ local function getR6Part(char,name)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
--- cache enemies list, refresh every 0.25s to avoid per-frame GetPlayers()
+-- cache enemies list, refresh every 0.05s (20Hz)
 local _enemyCache={}
 local _enemyCacheTick=0
 local function getEnemies()
     local now=os.clock()
-    if now-_enemyCacheTick < 0.25 then return _enemyCache end
+    if now-_enemyCacheTick < 0.05 then return _enemyCache end
     _enemyCacheTick=now
     local list={}
     for _,p in ipairs(Players:GetPlayers()) do
@@ -548,15 +631,62 @@ local function screenDist(worldPos)
     return math.sqrt((sp.X-vps.X*0.5)^2+(sp.Y-vps.Y*0.5)^2)
 end
 
-local function getClosest(partName,fovPx)
-    local best,bestD=nil,fovPx or math.huge
-    for _,e in ipairs(getEnemies()) do
-        local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
-        if part then
+-- sticky target: once locked, hold until lost for >0.4s or dead/out of range
+local _stickyTarget   = nil
+local _stickyLostAt   = nil
+local STICKY_GRACE    = 0.4   -- seconds to hold after losing FOV
+local STICKY_MAX_DIST = 250   -- world-space meters: won't lock past this
+
+local function getClosest(partName,fovPx,maxMeters)
+    local myRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local hardMax=math.min(maxMeters or 1000, STICKY_MAX_DIST)
+    local fov=fovPx or math.huge
+
+    -- validate sticky target still alive and in range
+    if _stickyTarget then
+        local e=_stickyTarget
+        local hum=e.char and e.char:FindFirstChildOfClass("Humanoid")
+        local root=e.char and e.char:FindFirstChild("HumanoidRootPart")
+        local alive=hum and hum.Health>0 and root
+        local inRange=alive and myRoot and (root.Position-myRoot.Position).Magnitude<=hardMax
+        if not alive or not inRange then
+            _stickyTarget=nil;_stickyLostAt=nil
+        else
+            local part=e.char:FindFirstChild(partName or "Head") or root
             local d=screenDist(part.Position)
-            if d<bestD then bestD=d;best=e end
+            if d<=fov then
+                -- still in FOV: refresh grace timer and return
+                _stickyLostAt=nil
+                return e
+            else
+                -- outside FOV: start/check grace period
+                local now=os.clock()
+                if not _stickyLostAt then _stickyLostAt=now end
+                if now-_stickyLostAt < STICKY_GRACE then
+                    return e  -- hold the lock during grace window
+                end
+                -- grace expired: release lock
+                _stickyTarget=nil;_stickyLostAt=nil
+            end
         end
     end
+
+    -- no sticky target: find closest by world distance first, then screen dist as tiebreak
+    local best,bestWorld,bestScreen=nil,math.huge,math.huge
+    for _,e in ipairs(getEnemies()) do
+        if not myRoot then break end
+        local wDist=(e.root.Position-myRoot.Position).Magnitude
+        if wDist>hardMax or wDist<1 then continue end
+        local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
+        if not part then continue end
+        local sDist=screenDist(part.Position)
+        if sDist>fov then continue end
+        -- prefer closer world distance; use screen dist as tiebreak within 20m
+        if wDist < bestWorld-20 or (wDist < bestWorld+20 and sDist < bestScreen) then
+            best=e;bestWorld=wDist;bestScreen=sDist
+        end
+    end
+    if best then _stickyTarget=best;_stickyLostAt=nil end
     return best
 end
 
@@ -568,6 +698,33 @@ task.spawn(function()
     GunFire=game:GetService("ReplicatedStorage"):WaitForChild("GunFire",15)
 end)
 
+-- pending redirect: set on each SA shot, consumed by ClientBullet watcher
+local _pendingRedirect = nil  -- {part, expireAt}
+
+-- Watch for ClientBullet spawns and redirect velocity toward target
+track(workspace.DescendantAdded:Connect(function(obj)
+    if not _pendingRedirect then return end
+    if os.clock() > _pendingRedirect.expireAt then _pendingRedirect=nil; return end
+    if not obj.Name:find("Bullet") and not obj.Name:find("bullet") then return end
+    local targetPart = _pendingRedirect.part
+    _pendingRedirect = nil
+    task.defer(function()
+        if not obj or not obj.Parent then return end
+        if not targetPart or not targetPart.Parent then return end
+        local dir = (targetPart.Position - obj.Position)
+        if dir.Magnitude < 0.01 then return end
+        -- redirect AssemblyLinearVelocity toward target
+        local speed = obj:IsA("BasePart") and obj.AssemblyLinearVelocity.Magnitude or 500
+        speed = math.max(speed, 300)
+        if obj:IsA("BasePart") then
+            obj.AssemblyLinearVelocity = dir.Unit * speed
+        end
+        -- also try BodyVelocity if present
+        local bv = obj:FindFirstChildOfClass("BodyVelocity")
+        if bv then bv.Velocity = dir.Unit * speed end
+    end)
+end))
+
 local _hooked=false
 track(RunService.Heartbeat:Connect(function()
     if _hooked or not GunFire or not hookfunction then return end
@@ -576,15 +733,25 @@ track(RunService.Heartbeat:Connect(function()
     hookfunction(orig,newcclosure(function(self,...)
         local args={...}
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
+
         if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
             local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part and typeof(origin)=="Vector3" then
-                    args[3]=(part.Position-origin).Unit
+                    -- physics-based prediction: dist / bullet speed
+                    local vel=target.root.AssemblyLinearVelocity
+                    local dist=(part.Position-origin).Magnitude
+                    local travelTime=dist/500
+                    -- apply prediction twice to compensate for server lag
+                    local aimPos=part.Position + vel*travelTime + vel*(travelTime*0.5)
+                    args[3]=(aimPos-origin).Unit
+                    -- set pending redirect for ClientBullet
+                    _pendingRedirect={part=part, expireAt=os.clock()+0.5}
                 end
             end
         end
+
         if Flags.no_spread and typeof(args[3])=="Vector3" then
             args[3]=workspace.CurrentCamera.CFrame.LookVector
         end
@@ -609,7 +776,7 @@ end))
 track(RunService.RenderStepped:Connect(function()
     if not Flags.ab_enabled and not Flags._fire_held then return end
     local partName=Flags.ab_part or "Head"
-    local target=getClosest(partName,Flags.ab_fov or 120)
+    local target=getClosest(partName,Flags.ab_fov or 120, 1000)
     if not target then return end
     local part=getR6Part(target.char,partName)
     if not part then return end
@@ -617,7 +784,9 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        targetPos=targetPos+vel*(dist/500)
+        -- physics-based: dist/bulletspeed, with 1.5x multiplier for server lag
+        local travelTime=(dist/500)*1.5
+        targetPos=targetPos+vel*travelTime
     end
     local cam=workspace.CurrentCamera
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
@@ -649,6 +818,24 @@ do
         local h=math.abs(spT.Y-spB.Y)
         local cx=(spT.X+spB.X)*0.5
         return cx-h*0.45, math.min(spT.Y,spB.Y), cx+h*0.45, math.min(spT.Y,spB.Y)+h
+    end
+
+    -- 50Hz cached visibility raycast (shared params object)
+    local _visCache={};local _visTick={}
+    local _visParams=RaycastParams.new()
+    _visParams.FilterType=Enum.RaycastFilterType.Exclude
+    local VIS_RATE=0.02
+    local function isVisible(p,char,root)
+        local now=os.clock()
+        if not _visTick[p] or (now-_visTick[p])>=VIS_RATE then
+            _visTick[p]=now
+            local cam=workspace.CurrentCamera
+            _visParams.FilterDescendantsInstances={LocalPlayer.Character,char}
+            local torso=char:FindFirstChild("Torso") or root
+            local hit=workspace:Raycast(cam.CFrame.Position,torso.Position-cam.CFrame.Position,_visParams)
+            _visCache[p]=(hit==nil)
+        end
+        return _visCache[p]
     end
 
     local function makeESP(p)
@@ -727,8 +914,10 @@ do
             x1-=2;y1-=2;x2+=2;y2+=2
             local bw,bh=x2-x1,y2-y1
 
+            local visible=isVisible(p,char,root)
             if Flags.esp_box then
-                drawBox(d,x1,y1,x2,y2,Flags.esp_box_col or Color3.new(1,1,1))
+                local col=visible and (Flags.esp_box_col or Color3.new(1,1,1)) or Color3.fromRGB(255,60,60)
+                drawBox(d,x1,y1,x2,y2,col)
             else d.bf.Visible=false end
 
             if Flags.esp_name then
@@ -781,7 +970,12 @@ do
                 d.hl.Enabled=true
             else d.hl.Enabled=false end
         end
-        for p in pairs(_espData) do if not p.Parent then removeESP(p) end end
+        for p in pairs(_espData) do
+            if not p.Parent then
+                _visCache[p]=nil;_visTick[p]=nil
+                removeESP(p)
+            end
+        end
     end))
     Players.PlayerRemoving:Connect(removeESP)
 end
@@ -944,7 +1138,7 @@ do
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then return end
         if not origWS then origWS=hum.WalkSpeed end
-        hum.WalkSpeed=hum.MoveDirection.Magnitude>0.05 and 16+(Flags.m_omnisprint_bonus or 0) or origWS
+        hum.WalkSpeed=16+(Flags.m_omnisprint_bonus or 8)
     end))
 end
 
@@ -1025,6 +1219,59 @@ do
         local fps=math.floor(_frames/math.max(now-_sample,0.001)+0.5)
         _frames=0;_sample=now
         wmL.Text=string.format("APEX  |  %d:%02d  |  %dfps",math.floor(e/60),e%60,fps)
+    end))
+end
+
+-- ══════════════════════════════════════════════════════════
+-- NO LEAVES + NO GRASS
+-- ══════════════════════════════════════════════════════════
+do
+    local _hiddenLeaves={} -- {obj, originalParent}
+    local _noTreesConn=nil
+    local _prevNoTrees=false
+
+    local function hideLeaves(obj)
+        local leaves=obj:FindFirstChild("Leaves")
+        if leaves and leaves.Parent then
+            _hiddenLeaves[#_hiddenLeaves+1]={leaves,leaves.Parent}
+            leaves.Parent=nil
+        end
+    end
+    local function applyNoTrees(on)
+        if on then
+            local sh=workspace:FindFirstChild("SpawnedHarvestables")
+            if sh then
+                for _,v in ipairs(sh:GetChildren()) do
+                    local tf=v:GetAttribute("TemplateFolder")
+                    if tf=="Trees" or tf=="PineTrees" then hideLeaves(v) end
+                end
+                if not _noTreesConn then
+                    _noTreesConn=sh.ChildAdded:Connect(function(v)
+                        if not Flags.w_notrees then return end
+                        local tf=v:GetAttribute("TemplateFolder")
+                        if tf=="Trees" or tf=="PineTrees" then
+                            task.defer(function() hideLeaves(v) end)
+                        end
+                    end)
+                end
+            end
+        else
+            if _noTreesConn then _noTreesConn:Disconnect();_noTreesConn=nil end
+            for _,entry in ipairs(_hiddenLeaves) do
+                pcall(function() entry[1].Parent=entry[2] end)
+            end
+            table.clear(_hiddenLeaves)
+        end
+    end
+
+    local _ntTick=0
+    track(RunService.Heartbeat:Connect(function(dt)
+        _ntTick+=dt;if _ntTick<0.5 then return end;_ntTick=0
+        local cur=Flags.w_notrees==true
+        if cur~=_prevNoTrees then _prevNoTrees=cur;applyNoTrees(cur) end
+        -- No Grass: force every 0.5s so terrain can't re-enable it
+        local terrain=workspace:FindFirstChildOfClass("Terrain")
+        if terrain then terrain.Decoration=not(Flags.w_nograss==true) end
     end))
 end
 
