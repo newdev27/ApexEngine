@@ -1185,9 +1185,7 @@ end
 local ConfigPage = ConfigTab:AddSubtab("Configs")
 local cfgLeft = ConfigPage:AddGroup("Configs", Icons.save, "Left", 240)
 local cfgDrop = cfgLeft:AddDropdown({ Name="Config", Items=listConfigs(), Flag="cfg_sel" })
--- Name input via keybind label trick: use a slider as a name index isn't ideal,
--- so we store a pending name in a closure updated by the Save button prompt.
--- Simple approach: save uses cfg_sel name, user renames via OS or picks from list.
+
 cfgLeft:AddButton({ Name="Save (overwrite)", Callback=function()
     local name=ApexEngine.Flags["cfg_sel"]; if not name or name=="" then return end
     saveConfig(name); cfgDrop:Refresh(listConfigs()); cfgDrop:Set(name)
@@ -1202,151 +1200,6 @@ end })
 cfgLeft:AddButton({ Name="Delete", Callback=function()
     local name=ApexEngine.Flags["cfg_sel"]; if not name or name=="" then return end
     pcall(function() delfile(CFG_FOLDER.."/"..name..".json") end); cfgDrop:Refresh(listConfigs())
-end })
-
--- ── Key Manager group (right side of Configs tab) ──────────
-local KEYGEN_URL = "https://raw.githubusercontent.com/newdev27/ApexEngine/main/Apex%20Engine/KeyGenerator.lua"
-
--- Lazy-load KeyGenerator module once
-local _kg = nil
-local function getKG()
-    if _kg then return _kg end
-    local ok, result = pcall(function()
-        return loadstring(game:HttpGet(KEYGEN_URL .. "?t=" .. os.time()))()
-    end)
-    if ok and type(result) == "table" then _kg = result; return _kg end
-    warn("[ApexEngine] Failed to load KeyGenerator: " .. tostring(result))
-    return nil
-end
-
-local keyMgrG = ConfigPage:AddGroup("Key Manager", Icons.crown, "Right", 340)
-
--- Caller username input (TextBox row)
-local _callerName = ""
-do
-    local r = (function()
-        -- inline row since we're outside AddGroup's closure; use AddLabel as spacer then overlay a TextBox
-        -- We use AddButton trick: store ref via Label + manual TextBox
-        return nil
-    end)()
-end
-
--- We need a TextBox for caller name and target name — use AddLabel + manual approach
--- Since AddGroup only exposes AddCheckbox/Slider/etc, we use two AddButton callbacks
--- that read from a shared _callerName / _targetName updated via a TextBox we inject.
-
--- Inject caller TextBox via AddLabel (returns the label; we replace it)
-local _callerLbl  = keyMgrG:AddLabel("Caller: (not set)")
-local _targetLbl  = keyMgrG:AddLabel("Target: (not set)")
-local _statusLbl  = keyMgrG:AddLabel("")
-
-local _callerName = ""
-local _targetName = ""
-
--- Tier dropdown
-local _tierDrop = keyMgrG:AddDropdown({
-    Name  = "Tier",
-    Items = { "free", "1day", "weekly", "monthly", "yearly", "lifetime", "1hr", "1min" },
-    Default = "free",
-    Flag  = "kg_tier",
-})
-
--- Amount slider
-keyMgrG:AddSlider({ Name="Amount", Min=1, Max=10, Default=1, Flag="kg_amount" })
-
--- Set Caller button — opens a TextBox prompt via a ScreenGui overlay
-local function openNamePrompt(title, callback)
-    local pg = GetParentGui()
-    local overlay = New("ScreenGui", { Name="ApexPrompt", ResetOnSpawn=false,
-        ZIndexBehavior=Enum.ZIndexBehavior.Sibling, IgnoreGuiInset=true,
-        DisplayOrder=9999, Parent=pg })
-    New("Frame", { Size=UDim2.fromScale(1,1), BackgroundColor3=Color3.new(0,0,0),
-        BackgroundTransparency=0.55, BorderSizePixel=0, Parent=overlay })
-    local box = New("Frame", { AnchorPoint=Vector2.new(0.5,0.5),
-        Position=UDim2.fromScale(0.5,0.5), Size=UDim2.fromOffset(320,110),
-        BackgroundColor3=Theme.WindowBg, BorderSizePixel=0, Parent=overlay },
-        { Corner(10), Stroke() })
-    Label({ Text=title, Font=Theme.FontBold, TextSize=13,
-        Size=UDim2.new(1,-20,0,20), Position=UDim2.fromOffset(10,10), Parent=box })
-    local tb = New("TextBox", { BackgroundColor3=Theme.FrameInactive, BorderSizePixel=0,
-        ClearTextOnFocus=false, Font=Theme.Font, TextSize=12,
-        PlaceholderText="type name...", PlaceholderColor3=Theme.TextDisabled,
-        Text="", TextColor3=Theme.Text,
-        Size=UDim2.new(1,-20,0,30), Position=UDim2.fromOffset(10,38), Parent=box },
-        { Corner(6), Stroke(Theme.Border,0.6) })
-    New("UIPadding", { PaddingLeft=UDim.new(0,8), Parent=tb })
-    local ok = New("TextButton", { BackgroundColor3=Theme.Accent, AutoButtonColor=false,
-        Text="Confirm", Font=Theme.FontBold, TextSize=12,
-        TextColor3=Color3.fromRGB(8,8,8),
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.fromOffset(10,76), Parent=box }, { Corner(6) })
-    local cancel = New("TextButton", { BackgroundColor3=Theme.Button, AutoButtonColor=false,
-        Text="Cancel", Font=Theme.Font, TextSize=12, TextColor3=Theme.TextDisabled,
-        Size=UDim2.new(0.48,-5,0,26), Position=UDim2.new(0.52,0,0,76), Parent=box }, { Corner(6) })
-    local function close(val)
-        overlay:Destroy()
-        if val and val ~= "" then callback(val) end
-    end
-    ok.MouseButton1Click:Connect(function() close(tb.Text:match("^%s*(.-)%s*$")) end)
-    cancel.MouseButton1Click:Connect(function() overlay:Destroy() end)
-    tb.FocusLost:Connect(function(enter) if enter then close(tb.Text:match("^%s*(.-)%s*$")) end end)
-    task.defer(function() tb:CaptureFocus() end)
-end
-
-keyMgrG:AddButton({ Name="Set Caller (your name)", Callback=function()
-    openNamePrompt("Enter your username (caller):", function(name)
-        _callerName = name:lower()
-        _callerLbl.Text = "Caller: " .. _callerName
-    end)
-end })
-
-keyMgrG:AddButton({ Name="Set Target (recipient)", Callback=function()
-    openNamePrompt("Enter recipient username:", function(name)
-        _targetName = name:lower()
-        _targetLbl.Text = "Target: " .. _targetName
-    end)
-end })
-
-keyMgrG:AddSeparator()
-
--- genkey button
-keyMgrG:AddButton({ Name="Generate Key", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    local tier   = ApexEngine.Flags["kg_tier"] or "free"
-    local amount = ApexEngine.Flags["kg_amount"] or 1
-    local note   = _targetName ~= "" and ("for " .. _targetName) or "manual"
-    local result = kg.genkey(_callerName, tier, note, amount)
-    if result then
-        local keys = {}
-        for k in pairs(result) do keys[#keys+1] = k end
-        _statusLbl.Text = "✓ " .. #keys .. "x " .. tier
-        -- copy first key to clipboard
-        local copy = setclipboard or toclipboard
-        if copy and #keys == 1 then pcall(copy, keys[1]) end
-    else
-        _statusLbl.Text = "Denied or invalid tier."
-    end
-end })
-
--- Grant permission button
-keyMgrG:AddButton({ Name="Grant Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.grantPermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Granted: " .. _targetName) or "Denied."
-end })
-
--- Revoke permission button
-keyMgrG:AddButton({ Name="Revoke Permission", Callback=function()
-    local kg = getKG()
-    if not kg then _statusLbl.Text = "Error: could not load KeyGenerator."; return end
-    if _callerName == "" then _statusLbl.Text = "Set Caller first."; return end
-    if _targetName == "" then _statusLbl.Text = "Set Target first."; return end
-    local ok = kg.revokePermission(_callerName, _targetName)
-    _statusLbl.Text = ok and ("✓ Revoked: " .. _targetName) or "Denied."
 end })
 
 local cfgRight = ConfigPage:AddGroup("Interface", Icons.hammer, "Right", 210)
@@ -2041,11 +1894,30 @@ do
         return char and char:FindFirstChild("Head")
     end
 
-    -- World -> screen with visibility check
+    -- World -> screen
     local function worldToScreen(pos)
         local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(pos)
         return Vector2.new(sp.X, sp.Y), onScreen, sp.Z
+    end
+
+    -- Fast visibility cache: raycast result per player, refreshed at 50Hz
+    local _visCache   = {}  -- [player] = bool
+    local _visTick    = {}  -- [player] = last update clock
+    local _visParams  = RaycastParams.new()
+    _visParams.FilterType = Enum.RaycastFilterType.Exclude
+    local _VIS_RATE   = 0.02  -- 50 updates/sec
+
+    local function isVisible(p, char, torso)
+        local now = os.clock()
+        if not _visTick[p] or (now - _visTick[p]) >= _VIS_RATE then
+            _visTick[p] = now
+            local cam = workspace.CurrentCamera
+            _visParams.FilterDescendantsInstances = { LocalPlayer.Character, char }
+            local hit = workspace:Raycast(cam.CFrame.Position, torso.Position - cam.CFrame.Position, _visParams)
+            _visCache[p] = (hit == nil)
+        end
+        return _visCache[p]
     end
 
     -- Fast bounds: 2 VP calls using Head top + foot bottom
@@ -2289,9 +2161,15 @@ do
             x1 -= pad; y1 -= pad; x2 += pad; y2 += pad
             local bw, bh = x2-x1, y2-y1
 
+            -- Visibility check (50Hz cached raycast)
+            local torso = char:FindFirstChild("Torso") or root
+            local visible = isVisible(p, char, torso)
+
             -- Box
             if flags["esp_box"] then
-                local col = flags["esp_box_col"] or Color3.new(1,1,1)
+                local col = visible
+                    and (flags["esp_box_col"] or Color3.new(1,1,1))
+                    or  Color3.fromRGB(255,60,60)
                 drawBox(d, x1, y1, x2, y2, col, 1)
             else
                 d.boxFrame.Visible = false
@@ -2432,7 +2310,11 @@ do
 
         -- Clean up left players
         for p, _ in pairs(_espData) do
-            if not p.Parent then removeESP(p) end
+            if not p.Parent then
+                _visCache[p] = nil
+                _visTick[p]  = nil
+                removeESP(p)
+            end
         end
     end))
 
