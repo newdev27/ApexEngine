@@ -1011,15 +1011,21 @@ do
             else d.dl.Visible=false end
 
             if Flags.esp_tracer then
-                local ox,oy=vps.X*0.5,vps.Y
-                local tx=(x1+x2)*0.5;local ty=y2
+                local origin=Flags.esp_tracer_origin or "Bottom"
+                local ox,oy
+                if origin=="Center" then ox,oy=vps.X*0.5,vps.Y*0.5
+                elseif origin=="Mouse" then
+                    local mp=UserInputService:GetMouseLocation();ox,oy=mp.X,mp.Y
+                else ox,oy=vps.X*0.5,vps.Y end
+                local tx=(x1+x2)*0.5;local ty=(y1+y2)*0.5  -- aim at torso center
                 local dx,dy=tx-ox,ty-oy
                 local len=math.sqrt(dx*dx+dy*dy)
-                if len>=1 then
+                if len>=2 then
                     d.tr.Position=UDim2.fromOffset(ox,oy)
                     d.tr.Size=UDim2.fromOffset(len,1)
                     d.tr.Rotation=math.deg(math.atan2(dy,dx))
                     d.tr.BackgroundColor3=Flags.esp_tracer_col or Color3.fromRGB(0,180,255)
+                    d.tr.BackgroundTransparency=0
                     d.tr.Visible=true
                 else d.tr.Visible=false end
             else d.tr.Visible=false end
