@@ -271,6 +271,14 @@
       "created_at": 1794201310,
       "expires_at": null,
       "note": ""
+    },
+    "APEX-LTFC4F-RQFADF-QK": {
+      "hwid": "",
+      "blocked": false,
+      "tier": "lifetime",
+      "created_at": 1794587911,
+      "expires_at": null,
+      "note": "For my pookie"
     }
   }
 }
