@@ -1556,9 +1556,13 @@ do
     local GunFire = nil
 
     -- ── Shared helpers ────────────────────────────────────────
+    -- Enemy list cache (refreshed every 0.05s)
+    local _enemyCache, _enemyCacheTick = {}, 0
     local function getEnemies()
+        local now = os.clock()
+        if now - _enemyCacheTick < 0.05 then return _enemyCache end
+        _enemyCacheTick = now
         local list = {}
-        local myChar = LocalPlayer.Character
         for _, p in ipairs(Players:GetPlayers()) do
             if p == LocalPlayer then continue end
             local char = p.Character
@@ -1568,6 +1572,7 @@ do
                 list[#list+1] = { player=p, char=char, hum=hum, root=root }
             end
         end
+        _enemyCache = list
         return list
     end
 
@@ -1584,16 +1589,64 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
+    -- Sticky target system: holds lock for STICKY_GRACE seconds after losing FOV
+    local _stickyEnemy    = nil
+    local _stickyLostAt   = nil
+    local STICKY_GRACE    = 0.4
+    local COMBAT_MAX_DIST = 500  -- hard world-space cap in studs
+
     local function getClosestEnemy(partName, fovPx)
-        local best, bestDist = nil, fovPx or math.huge
-        for _, e in ipairs(getEnemies()) do
-            local part = getAimPart(e.char, partName or "Head")
-            if part then
-                local d = screenDist(part.Position)
-                if d < bestDist then bestDist = d; best = e end
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local fov = fovPx or math.huge
+
+        -- validate sticky
+        if _stickyEnemy then
+            local e = _stickyEnemy
+            local hum  = e.char and e.char:FindFirstChildOfClass("Humanoid")
+            local root = e.char and e.char:FindFirstChild("HumanoidRootPart")
+            local alive = hum and hum.Health > 0 and root
+            local inRange = alive and myRoot and (root.Position - myRoot.Position).Magnitude <= COMBAT_MAX_DIST
+            if not alive or not inRange then
+                _stickyEnemy = nil; _stickyLostAt = nil
+            else
+                local part = getAimPart(e.char, partName or "Head")
+                local d = part and screenDist(part.Position) or math.huge
+                if d <= fov then
+                    _stickyLostAt = nil; return e
+                else
+                    local now = os.clock()
+                    if not _stickyLostAt then _stickyLostAt = now end
+                    if now - _stickyLostAt < STICKY_GRACE then return e end
+                    _stickyEnemy = nil; _stickyLostAt = nil
+                end
             end
         end
+
+        -- pick new target: world-distance primary, screen-dist tiebreak within 20m
+        local best, bestWorld, bestScreen = nil, math.huge, math.huge
+        for _, e in ipairs(getEnemies()) do
+            if not myRoot then break end
+            local wDist = (e.root.Position - myRoot.Position).Magnitude
+            if wDist > COMBAT_MAX_DIST or wDist < 1 then continue end
+            local part = getAimPart(e.char, partName or "Head")
+            if not part then continue end
+            local sDist = screenDist(part.Position)
+            if sDist > fov then continue end
+            if wDist < bestWorld - 20 or (wDist < bestWorld + 20 and sDist < bestScreen) then
+                best = e; bestWorld = wDist; bestScreen = sDist
+            end
+        end
+        if best then _stickyEnemy = best; _stickyLostAt = nil end
         return best
+    end
+
+    -- Physics-based prediction: accounts for actual bullet travel time at range
+    local BULLET_SPEED = 500  -- studs/s (Brisk Survival default)
+    local function predictPos(partPos, vel, camPos)
+        local dist = (partPos - camPos).Magnitude
+        local travelTime = dist / BULLET_SPEED
+        -- apply 1.5x to compensate for server processing lag at range
+        return partPos + vel * (travelTime * 1.5)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
@@ -1754,22 +1807,24 @@ do
                     if target then
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
-                            args[3] = (part.Position - origin).Unit
+                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                            args[3] = (aimPos - origin).Unit
                             if flags["bullet_tracers"] then
-                                task.spawn(drawBulletTracer, origin, part.Position)
+                                task.spawn(drawBulletTracer, origin, aimPos)
                             end
                         end
                     end
                 end
             end
 
-            -- No Spread: replace direction with clean (target - origin).Unit
+            -- No Spread: replace direction with exact predicted aim direction
             if flags["no_spread"] and not _rapidFireActive then
                 local target = getClosestEnemy(flags["sa_part"] or "Head", flags["sa_fov"] or 80)
                 if target then
                     local part = getR6Part(target.char, flags["sa_part"] or "Head")
                     if part and #args >= 3 and typeof(args[3]) == "Vector3" then
-                        args[3] = (part.Position - origin).Unit
+                        local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                        args[3] = (aimPos - origin).Unit
                     end
                 end
             end
@@ -1831,23 +1886,16 @@ do
         if not target then return end
         local part = getR6Part(target.char, partName)
         if not part then return end
+        local cam = workspace.CurrentCamera
         local targetPos = part.Position
         if flags["ab_predict"] then
-            local vel = target.root.AssemblyLinearVelocity
-            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if myRoot then
-                -- prediction scalar 0.12 matches reference
-                targetPos = targetPos + vel * ((flags["ab_smooth"] or 10) * 0.012)
-            end
+            targetPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, cam.CFrame.Position)
         end
-        local cam = workspace.CurrentCamera
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
-        -- CFrame.lookAt + Lerp (reference approach — no mouse jitter, works in all executors)
         local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
-        local lerpFactor = math.clamp(1 - smooth, 0.01, 0.99)
         local w = cam.CFrame
-        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), lerpFactor)
+        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1 - smooth, 0.01, 0.99))
     end))
 
     -- Triggerbot
