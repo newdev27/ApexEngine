@@ -1724,22 +1724,37 @@ do
 
     local function drawBulletTracer(fromWorld, toWorld)
         local cam = workspace.CurrentCamera
-        local spA = cam:WorldToViewportPoint(fromWorld)
-        local spB = cam:WorldToViewportPoint(toWorld)
+        local spA, onA = cam:WorldToViewportPoint(fromWorld)
+        local spB, onB = cam:WorldToViewportPoint(toWorld)
+        -- if the destination is behind the camera, draw from origin to screen center instead
         local ax, ay = spA.X, spA.Y
-        local bx, by = spB.X, spB.Y
+        local bx, by
+        if onB and spB.Z > 0 then
+            bx, by = spB.X, spB.Y
+        else
+            -- target off-screen: clamp to viewport edge using direction
+            local vp = cam.ViewportSize
+            bx, by = vp.X * 0.5, vp.Y * 0.5
+        end
+        -- if origin itself is behind camera, use screen center as origin
+        if not onA or spA.Z <= 0 then
+            local vp = cam.ViewportSize
+            ax, ay = vp.X * 0.5, vp.Y
+        end
         local dx, dy = bx - ax, by - ay
         local len = math.sqrt(dx*dx + dy*dy)
-        if len < 1 then return end
+        if len < 2 then return end
         local line = Instance.new("Frame")
         line.BackgroundColor3 = ApexEngine.Flags["tracer_col"] or Color3.fromRGB(255,80,80)
+        line.BackgroundTransparency = 0.15
         line.BorderSizePixel = 0
         line.AnchorPoint = Vector2.new(0, 0.5)
         line.Position = UDim2.fromOffset(ax, ay)
-        line.Size = UDim2.fromOffset(len, 1)
+        line.Size = UDim2.fromOffset(len, 2)
         line.Rotation = math.deg(math.atan2(dy, dx))
+        line.ZIndex = 5
         line.Parent = _tracerGui
-        game:GetService("Debris"):AddItem(line, 0.3)
+        game:GetService("Debris"):AddItem(line, 0.25)
     end
 
     local _rapidFireActive = false
@@ -2158,16 +2173,17 @@ do
         elseif origin == "Mouse" then
             local mp = UserInputService:GetMouseLocation()
             ox, oy = mp.X, mp.Y
-        else
+        else -- Bottom
             ox, oy = vp.X/2, vp.Y
         end
         local dx, dy = tx - ox, ty - oy
         local len = math.sqrt(dx*dx + dy*dy)
-        if len < 1 then d.tracer.Visible = false; return end
+        if len < 2 then d.tracer.Visible = false; return end
         d.tracer.Position         = UDim2.fromOffset(ox, oy)
         d.tracer.Size             = UDim2.fromOffset(len, 1)
         d.tracer.Rotation         = math.deg(math.atan2(dy, dx))
         d.tracer.BackgroundColor3 = col
+        d.tracer.BackgroundTransparency = 0
         d.tracer.Visible          = true
     end
 
