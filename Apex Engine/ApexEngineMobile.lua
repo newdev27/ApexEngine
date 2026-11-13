@@ -211,8 +211,8 @@ local rootGui=New("ScreenGui",{Name="ApexMobileUI",ResetOnSpawn=false,
 -- ══════════════════════════════════════════════════════════
 local espBtn=New("TextButton",{
     Text="👁",
-    AnchorPoint=Vector2.new(0.5,1),
-    Position=UDim2.new(0.5,0,1,-sc(10)),
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(76),0.5,0),
     Size=UDim2.fromOffset(sc(48),sc(48)),
     BackgroundColor3=T.On,
     AutoButtonColor=false,
@@ -447,6 +447,57 @@ makeToggle("Health Bar",        "esp_health")
 makeToggle("Distance",          "esp_dist")
 makeToggle("Tracers",           "esp_tracer")
 makeToggle("Highlight (Chams)", "esp_chams")
+do
+    -- ESP Max Distance slider: 100–2000m
+    Flags.esp_maxdist = Flags.esp_maxdist or 1500
+    local row=makeRow()
+    New("TextLabel",{Text="ESP Distance",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=100,2000
+    local function setDist(v)
+        v=math.clamp(math.floor(v/50+0.5)*50,MIN,MAX)
+        Flags.esp_maxdist=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v).."m"
+    end
+    setDist(Flags.esp_maxdist)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setDist(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setDist(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+end
 makeSep("── Crosshair ──")
 makeToggle("Crosshair",         "crosshair_enabled")
 makeSep("── Combat Visuals ──")
@@ -739,21 +790,28 @@ track(RunService.Heartbeat:Connect(function()
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part and typeof(origin)=="Vector3" then
-                    -- physics-based prediction: dist / bullet speed
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local travelTime=dist/500
-                    -- apply prediction twice to compensate for server lag
-                    local aimPos=part.Position + vel*travelTime + vel*(travelTime*0.5)
+                    local travelTime=(dist/500)*1.5
+                    local aimPos=part.Position+vel*travelTime
                     args[3]=(aimPos-origin).Unit
-                    -- set pending redirect for ClientBullet
                     _pendingRedirect={part=part, expireAt=os.clock()+0.5}
                 end
             end
         end
 
         if Flags.no_spread and typeof(args[3])=="Vector3" then
-            args[3]=workspace.CurrentCamera.CFrame.LookVector
+            local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120)
+            if target then
+                local part=getR6Part(target.char,Flags.sa_part or "Head")
+                if part then
+                    local vel=target.root.AssemblyLinearVelocity
+                    local dist=(part.Position-origin).Magnitude
+                    local travelTime=(dist/500)*1.5
+                    local aimPos=part.Position+vel*travelTime
+                    args[3]=(aimPos-origin).Unit
+                end
+            end
         end
         return orig(self,table.unpack(args))
     end))
@@ -784,7 +842,6 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        -- physics-based: dist/bulletspeed, with 1.5x multiplier for server lag
         local travelTime=(dist/500)*1.5
         targetPos=targetPos+vel*travelTime
     end
