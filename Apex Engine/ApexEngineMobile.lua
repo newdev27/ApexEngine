@@ -797,7 +797,7 @@ track(RunService.Heartbeat:Connect(function()
                 if part and typeof(origin)=="Vector3" then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/500)
+                    local aimPos=part.Position+vel*(dist/575)
                     args[3]=(aimPos-origin).Unit
                     _pendingRedirect={part=part, expireAt=os.clock()+0.5}
                 end
@@ -811,7 +811,7 @@ track(RunService.Heartbeat:Connect(function()
                 if part then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/500)
+                    local aimPos=part.Position+vel*(dist/575)
                     args[3]=(aimPos-origin).Unit
                 end
             end
@@ -845,7 +845,7 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        targetPos=targetPos+vel*(dist/500)
+        targetPos=targetPos+vel*(dist/575)
     end
     local cam=workspace.CurrentCamera
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
