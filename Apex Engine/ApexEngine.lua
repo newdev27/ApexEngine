@@ -1560,11 +1560,11 @@ do
     local GunFire = nil
 
     -- ── Shared helpers ────────────────────────────────────────
-    -- Enemy list cache (refreshed every 0.05s)
+    -- Enemy list cache (refreshed every frame for accurate positions)
     local _enemyCache, _enemyCacheTick = {}, 0
     local function getEnemies()
         local now = os.clock()
-        if now - _enemyCacheTick < 0.05 then return _enemyCache end
+        if now - _enemyCacheTick < 0 then return _enemyCache end
         _enemyCacheTick = now
         local list = {}
         local myClanId = ApexEngine.Flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
@@ -1647,13 +1647,11 @@ do
         return best
     end
 
-    -- Physics-based prediction: accounts for actual bullet travel time at range
+    -- Physics-based prediction: pure travel time, no multiplier
     local BULLET_SPEED = 500  -- studs/s (Brisk Survival default)
     local function predictPos(partPos, vel, camPos)
         local dist = (partPos - camPos).Magnitude
-        local travelTime = dist / BULLET_SPEED
-        -- apply 1.5x to compensate for server processing lag at range
-        return partPos + vel * (travelTime * 1.5)
+        return partPos + vel * (dist / BULLET_SPEED)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
