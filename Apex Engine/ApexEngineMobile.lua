@@ -253,8 +253,8 @@ Corner(sc(24),openBtn)
 -- ══════════════════════════════════════════════════════════
 local abBtn=New("TextButton",{
     Text="🎯",
-    AnchorPoint=Vector2.new(1,1),
-    Position=UDim2.new(1,-sc(10),1,-sc(10)),
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(10),0.5,0),
     Size=UDim2.fromOffset(sc(56),sc(56)),
     BackgroundColor3=T.ABOff,
     AutoButtonColor=false,
