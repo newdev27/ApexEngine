@@ -1028,6 +1028,10 @@ espG:AddCheckbox({ Name="Distance",       Default=false, Flag="esp_dist" })
 espG:AddSlider({   Name="Max Distance",   Min=50,Max=5000,Default=1500,Suffix="m",Flag="esp_maxdist" })
 espG:AddSlider({   Name="Text Size",      Min=8,Max=24,Default=13,Flag="esp_textsize" })
 
+local tcG = VisualPage:AddGroup("Team Check", Icons.crown, "Left", 80)
+tcG:AddCheckbox({ Name="Team Check", Default=true, Flag="tc_enabled" })
+tcG:AddLabel("Skip clan teammates in all features")
+
 local espR = VisualPage:AddGroup("Extra", Icons.ghost, "Right", 340)
 espR:AddCheckbox({ Name="Tracers",        Default=false, Flag="esp_tracer" })
 espR:AddColorPicker({ Name="Tracer Color",Default=Color3.fromRGB(0,180,255),   Flag="esp_tracer_col" })
@@ -1563,8 +1567,11 @@ do
         if now - _enemyCacheTick < 0.05 then return _enemyCache end
         _enemyCacheTick = now
         local list = {}
+        local myClanId = ApexEngine.Flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
         for _, p in ipairs(Players:GetPlayers()) do
             if p == LocalPlayer then continue end
+            -- Team check: skip players sharing our ClanId
+            if myClanId ~= nil and p:GetAttribute("ClanId") == myClanId then continue end
             local char = p.Character
             local hum  = char and char:FindFirstChildOfClass("Humanoid")
             local root = char and char:FindFirstChild("HumanoidRootPart")
