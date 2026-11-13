@@ -656,12 +656,12 @@ local function getR6Part(char,name)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
--- cache enemies list, refresh every 0.05s (20Hz)
+-- cache enemies list, refresh every frame for accurate positions
 local _enemyCache={}
 local _enemyCacheTick=0
 local function getEnemies()
     local now=os.clock()
-    if now-_enemyCacheTick < 0.05 then return _enemyCache end
+    if now-_enemyCacheTick < 0 then return _enemyCache end
     _enemyCacheTick=now
     local list={}
     local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
@@ -797,8 +797,7 @@ track(RunService.Heartbeat:Connect(function()
                 if part and typeof(origin)=="Vector3" then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local travelTime=(dist/500)*1.5
-                    local aimPos=part.Position+vel*travelTime
+                    local aimPos=part.Position+vel*(dist/500)
                     args[3]=(aimPos-origin).Unit
                     _pendingRedirect={part=part, expireAt=os.clock()+0.5}
                 end
@@ -812,8 +811,7 @@ track(RunService.Heartbeat:Connect(function()
                 if part then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local travelTime=(dist/500)*1.5
-                    local aimPos=part.Position+vel*travelTime
+                    local aimPos=part.Position+vel*(dist/500)
                     args[3]=(aimPos-origin).Unit
                 end
             end
@@ -847,8 +845,7 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        local travelTime=(dist/500)*1.5
-        targetPos=targetPos+vel*travelTime
+        targetPos=targetPos+vel*(dist/500)
     end
     local cam=workspace.CurrentCamera
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
