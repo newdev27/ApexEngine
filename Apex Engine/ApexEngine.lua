@@ -1653,7 +1653,11 @@ do
         local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 2000
         local dist = (partPos - camPos).Magnitude
         local ping = LocalPlayer:GetNetworkPing()
-        return partPos + vel * (dist / bulletSpeed + ping * 0.5)
+        -- travel time: how long bullet takes to reach target
+        -- ping: one-way server delay (full RTT / 2), but clamp so close-range doesn't over-predict
+        local travelTime = dist / bulletSpeed
+        local pingOffset = math.min(ping, 0.15) -- cap at 150ms to avoid over-shooting slow/still targets
+        return partPos + vel * (travelTime + pingOffset)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
