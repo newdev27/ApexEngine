@@ -1,3 +1,4 @@
+
 --[[
     Apex Engine — Brisk Survival cheat
     Designed and developed by F9r (discord: 5nqs)
@@ -971,7 +972,6 @@ aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
 aimG:AddKeybind({  Name="SA Hold Key",   Default=nil,   Flag="sa_key" })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
-aimG:AddSlider({   Name="Max Distance",  Min=50,Max=1000,Default=300,Suffix="m",Flag="sa_maxdist" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
 aimG:AddSeparator()
 aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
@@ -985,17 +985,17 @@ abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
 abG:AddKeybind({  Name="Aimbot Key",    Default=Enum.KeyCode.E, Flag="ab_key" })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
-abG:AddSlider({   Name="Max Distance",  Min=50,Max=1000,Default=300,Suffix="m",Flag="ab_maxdist" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
+abG:AddCheckbox({ Name="Camlock",       Default=false, Flag="ab_camlock" })
+abG:AddKeybind({  Name="Camlock Key",   Default=Enum.KeyCode.F, Flag="ab_camlock_key" })
+abG:AddSlider({   Name="Camlock Smooth",Min=1,Max=50,Default=10,Flag="ab_camlock_smooth" })
 
 -- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
 miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
 miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
-miscG:AddCheckbox({ Name="No Bullet Drop",  Default=false, Flag="no_bullet_drop" })
-miscG:AddCheckbox({ Name="Instant Reload",  Default=false, Flag="instant_reload" })
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Rapid Fire",      Default=false, Flag="rapid_fire" })
 miscG:AddSlider({   Name="RF Multiplier",   Min=2, Max=10, Default=3, Flag="rapid_fire_mult" })
@@ -1005,6 +1005,10 @@ miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet"
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
+miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
+miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
+miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
 
 -- Right: Snapline
 local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
@@ -1123,7 +1127,6 @@ local PlayerPage = PlayerTab:AddSubtab("Movement")
 
 local moveG = PlayerPage:AddGroup("Movement", Icons.user, "Left", 220)
 moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" })
-moveG:AddKeybind({  Name="Sprint Key",      Default=Enum.KeyCode.LeftShift, Flag="m_omnisprint_key" })
 moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
@@ -1487,17 +1490,12 @@ do
         e.bg.Visible = true
     end
 
-    local _wespTick = 0
-    trackConnection(RunService.Heartbeat:Connect(function(dt)
-        _wespTick += dt; if _wespTick < 0.1 then return end; _wespTick = 0
-
-        local flags   = ApexEngine.Flags
-        local drawn   = {}
-        local cam     = workspace.CurrentCamera
-        local myChar  = LocalPlayer.Character
-        local myRoot  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    trackConnection(RunService.RenderStepped:Connect(function()
+        local flags = ApexEngine.Flags
+        local cam = workspace.CurrentCamera
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         local maxDist = flags["wesp_maxdist"] or 1000
-        local camPos  = cam.CFrame.Position
+        local drawn = {}
 
         -- Harvestables
         if flags["wesp_harv"] or flags["wesp_ore"] then
@@ -1616,13 +1614,11 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
-    local function getClosestEnemy(partName, fovPx, maxWorldDist)
+    local function getClosestEnemy(partName, fovPx)
         local best, bestDist = nil, fovPx or math.huge
-        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
-                if maxWorldDist and myRoot and (part.Position - myRoot.Position).Magnitude > maxWorldDist then continue end
                 local d = screenDist(part.Position)
                 if d < bestDist then bestDist = d; best = e end
             end
@@ -1643,13 +1639,9 @@ do
         return false
     end
 
-    -- Physics-based prediction: dist/bulletSpeed + ping compensation
-    local BULLET_SPEED = 500  -- Brisk Survival default stud/s
+    -- Lightweight prediction: flat 0.1s offset (less aggressive, avoids overshooting)
     local function predictPos(partPos, vel, camPos)
-        local dist = (partPos - camPos).Magnitude
-        local ping = (LocalPlayer:GetNetworkPing and LocalPlayer:GetNetworkPing() or 0.06)
-        local t = dist / BULLET_SPEED + ping * 0.5
-        return partPos + vel * t
+        return partPos + vel * 0.1
     end
 
     -- ── FOV circle ────────────────────────────────────────────
@@ -1765,29 +1757,49 @@ do
             local flags = ApexEngine.Flags
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
-            local SA_MAX_DIST = flags["sa_maxdist"] or 300
-            local camPos = workspace.CurrentCamera.CFrame.Position
-
-            -- Always Headshot / Instant Bullet
+            -- Always Headshot / Instant Bullet: find closest head (no FOV limit), redirect
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
-                local target = getClosestEnemy("Head", math.huge, SA_MAX_DIST)
-                local bestHead = target and target.char:FindFirstChild("Head")
-                if bestHead then
-                    local vel = target.root.AssemblyLinearVelocity
-                    local targetPos = predictPos(bestHead.Position, vel, camPos)
-                    if flags["instant_bullet"] then
-                        -- teleport muzzle to target; keep real camPos for direction calc
-                        if typeof(args[1]) == "Vector3" then args[1] = targetPos end
+                local cam = workspace.CurrentCamera
+                local bestDist, bestHead = math.huge, nil
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        local myClanId = flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
+                        if myClanId ~= nil and p:GetAttribute("ClanId") == myClanId then continue end
+                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                        local head = p.Character:FindFirstChild("Head")
+                        if head and hum and hum.Health > 0 then
+                            local sp, onSc = cam:WorldToViewportPoint(head.Position)
+                            if onSc and sp.Z > 0 then
+                                local vp = cam.ViewportSize
+                                local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(vp.X*0.5, vp.Y*0.5)).Magnitude
+                                if d < bestDist then bestDist = d; bestHead = head end
+                            end
+                        end
                     end
-                    local dir = targetPos - camPos
-                    if dir.Magnitude > 0.01 then args[3] = dir.Unit end
-                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, camPos, targetPos) end
+                end
+                if bestHead then
+                    local targetPos = bestHead.Position
+                    if flags["instant_bullet"] then
+                        -- place muzzle at target so bullet has zero travel distance
+                        if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = targetPos end
+                        origin = targetPos
+                    end
+                    local dir = (targetPos - origin)
+                    if dir.Magnitude > 0.01 then
+                        args[3] = dir.Unit
+                    end
+                    if flags["bullet_tracers"] then
+                        task.spawn(drawBulletTracer, origin, targetPos)
+                    end
                     if flags["rapid_fire"] and not _rapidFireActive then
                         local result = orig(self, table.unpack(args))
                         _rapidFireActive = true
                         task.spawn(function()
                             local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                            for _ = 1, extra do task.wait(); task.spawn(function() orig(self, table.unpack(args)) end) end
+                            for _ = 1, extra do
+                                task.wait()
+                                task.spawn(function() orig(self, table.unpack(args)) end)
+                            end
                             _rapidFireActive = false
                         end)
                         return result
@@ -1802,12 +1814,12 @@ do
                 local keyHeld = (not key) or isBindHeld(key)
                 if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80, SA_MAX_DIST)
+                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
                     if target then
                         local part = getR6Part(target.char, partName)
-                        if part then
-                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, camPos)
-                            args[3] = (aimPos - camPos).Unit
+                        if part and typeof(origin) == "Vector3" then
+                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                            args[3] = (aimPos - origin).Unit
                             if flags["bullet_tracers"] then
                                 task.spawn(drawBulletTracer, origin, aimPos)
                             end
@@ -1820,15 +1832,6 @@ do
             if flags["no_spread"] and not _rapidFireActive then
                 if #args >= 3 and typeof(args[3]) == "Vector3" then
                     args[3] = workspace.CurrentCamera.CFrame.LookVector
-                end
-            end
-
-            -- No Bullet Drop: straight-line direction to target, removes gravity arc
-            if flags["no_bullet_drop"] and not _rapidFireActive then
-                local target = getClosestEnemy(flags["sa_part"] or "Head", math.huge, SA_MAX_DIST)
-                if target then
-                    local part = getR6Part(target.char, flags["sa_part"] or "Head")
-                    if part then args[3] = (part.Position - origin).Unit end
                 end
             end
 
@@ -1861,21 +1864,20 @@ do
         end))
     end))
 
-    -- No Recoil + Instant Reload: unbind ClientGun RenderStep binds each frame
-    local _lastToolName = ""
+    -- No Recoil
+    local _noRecoilUnbound = {}
     trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
         local char = LocalPlayer.Character
-        if not char then _lastToolName = ""; return end
+        if not char then table.clear(_noRecoilUnbound); return end
         for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") and tool.Name ~= _lastToolName then
-                _lastToolName = tool.Name
-                if flags["no_recoil"]       then RunService:UnbindFromRenderStep("Recoil_"..tool.Name) end
-                if flags["instant_reload"]  then RunService:UnbindFromRenderStep("Reload_"..tool.Name) end
-            end
             if tool:IsA("Tool") then
-                if flags["no_recoil"]      then RunService:UnbindFromRenderStep("Recoil_"..tool.Name) end
-                if flags["instant_reload"] then RunService:UnbindFromRenderStep("Reload_"..tool.Name) end
+                local bindName = "Recoil_" .. tool.Name
+                if ApexEngine.Flags["no_recoil"] then
+                    RunService:UnbindFromRenderStep(bindName)
+                    _noRecoilUnbound[bindName] = true
+                elseif _noRecoilUnbound[bindName] then
+                    _noRecoilUnbound[bindName] = nil
+                end
             end
         end
     end))
@@ -1886,15 +1888,15 @@ do
         if not flags["ab_enabled"] then return end
         if not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
-        local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 300)
+        local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
         local part = getR6Part(target.char, partName)
         if not part then return end
         local cam = workspace.CurrentCamera
-        local camPos = cam.CFrame.Position
-        local targetPos = flags["ab_predict"]
-            and predictPos(part.Position, target.root.AssemblyLinearVelocity, camPos)
-            or part.Position
+        local targetPos = part.Position
+        if flags["ab_predict"] then
+            targetPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, cam.CFrame.Position)
+        end
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
         local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
@@ -2169,10 +2171,8 @@ do
         d.tracer.Visible          = true
     end
 
-    -- Main ESP update loop — throttled to 20Hz on Heartbeat (not RenderStepped)
-    local _espTick = 0
-    trackConnection(RunService.Heartbeat:Connect(function(dt)
-        _espTick += dt; if _espTick < 0.05 then return end; _espTick = 0
+    -- Main ESP update loop
+    trackConnection(RunService.RenderStepped:Connect(function()
         local flags = ApexEngine.Flags
         local enabled = flags["esp_enabled"] == true
         local cam = workspace.CurrentCamera
@@ -2680,6 +2680,70 @@ do
 end
 
 -- ============================================================
+-- CAMLOCK
+-- ============================================================
+do
+    trackConnection(RunService.RenderStepped:Connect(function(dt)
+        local flags = ApexEngine.Flags
+        if not flags["ab_camlock"] then return end
+        if not isBindHeld(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
+        local cam = workspace.CurrentCamera
+        local vp  = cam.ViewportSize
+        local cx, cy = vp.X/2, vp.Y/2
+        local best, bestDist = nil, math.huge
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p == LocalPlayer then continue end
+            local char = p.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            local head = char and char:FindFirstChild("Head")
+            if hum and hum.Health > 0 and head then
+                local sp, onSc = cam:WorldToViewportPoint(head.Position)
+                if onSc and sp.Z > 0 then
+                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
+                    if d < bestDist then bestDist=d; best=head end
+                end
+            end
+        end
+        if not best then return end
+        local targetPos = best.Position
+        -- velocity prediction
+        local hroot = best.Parent and best.Parent:FindFirstChild("HumanoidRootPart")
+        if hroot then
+            targetPos = targetPos + hroot.AssemblyLinearVelocity * ((flags["ab_camlock_smooth"] or 10) * 0.012)
+        end
+        local smooth = math.clamp((flags["ab_camlock_smooth"] or 10) / 50, 0.01, 1)
+        local w = cam.CFrame
+        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1-smooth, 0.01, 0.99))
+    end))
+end
+
+-- ============================================================
+-- SPINBOT
+-- ============================================================
+do
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        if not flags["spinbot"] then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local speed = (flags["spinbot_speed"] or 25) * 10
+        local yaw   = (os.clock() * speed) % 360
+        local pitch = 0
+        local mode  = flags["spinbot_pitch"] or "Normal"
+        if mode == "Down" then
+            pitch = -1.3089969389957472
+        elseif mode == "Jitter" then
+            pitch = math.rad(math.random() > 0.5 and 65 or -75)
+        end
+        root.CFrame = CFrame.new(root.Position)
+            * CFrame.Angles(0, math.rad(yaw), 0)
+            * CFrame.Angles(pitch, 0, 0)
+    end))
+end
+
+-- ============================================================
 -- FOV CHANGER
 -- ============================================================
 do
@@ -2897,9 +2961,7 @@ do
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return end
         if not _origWalkSpeed then _origWalkSpeed = hum.WalkSpeed end
-        local sprintKey = flags["m_omnisprint_key"] or Enum.KeyCode.LeftShift
-        local held = UserInputService:IsKeyDown(sprintKey)
-        if held and hum.MoveDirection.Magnitude > 0.05 then
+        if hum.MoveDirection.Magnitude > 0.05 then
             hum.WalkSpeed = 16 + (flags["m_omnisprint_bonus"] or 0)
         else
             hum.WalkSpeed = _origWalkSpeed
@@ -2968,16 +3030,12 @@ do
         e.bg.Visible = true
     end
 
-    local _c4Tick = 0
-    trackConnection(RunService.Heartbeat:Connect(function(dt)
-        _c4Tick += dt; if _c4Tick < 0.1 then return end; _c4Tick = 0
-
-        local flags  = ApexEngine.Flags
-        local drawn  = {}
-        local t      = os.time()
-        local myChar = LocalPlayer.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        local camPos = workspace.CurrentCamera.CFrame.Position
+    trackConnection(RunService.RenderStepped:Connect(function()
+        local flags = ApexEngine.Flags
+        local cam   = workspace.CurrentCamera
+        local camPos = cam.CFrame.Position
+        local t = os.clock()
+        local drawn = {}
 
         -- C4
         if flags["wesp_c4"] then
