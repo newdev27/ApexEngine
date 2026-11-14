@@ -66,7 +66,7 @@ end
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
     sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100, sa_maxdist=300,
-    no_recoil=true, no_spread=true, no_bullet_drop=true,
+    no_recoil=true, no_spread=true, no_bullet_drop=true, instant_reload=false,
     always_headshot=false, rapid_fire=false,
     ab_enabled=false,
     ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true, ab_maxdist=300,
@@ -587,6 +587,7 @@ makeToggle("Always Headshot",  "always_headshot")
 makeToggle("No Recoil",        "no_recoil")
 makeToggle("No Spread",        "no_spread")
 makeToggle("No Bullet Drop",   "no_bullet_drop")
+makeToggle("Instant Reload",   "instant_reload")
 makeToggle("Rapid Fire",       "rapid_fire")
 makeToggle("Aimbot Lock",      "ab_enabled")
 
@@ -658,12 +659,20 @@ local function getR6Part(char,name)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
--- cache enemies list, refresh every frame for accurate positions
+-- Physics-based prediction: dist/bulletSpeed + ping compensation
+local BULLET_SPEED = 500
+local function predictPos(partPos, vel, camPos)
+    local dist = (partPos - camPos).Magnitude
+    local ping = (LocalPlayer:GetNetworkPing and LocalPlayer:GetNetworkPing() or 0.06)
+    return partPos + vel * (dist / BULLET_SPEED + ping * 0.5)
+end
+
+-- cache enemies list, refresh once per frame
 local _enemyCache={}
-local _enemyCacheTick=0
+local _enemyCacheTick=-1
 local function getEnemies()
     local now=os.clock()
-    if now-_enemyCacheTick < 0 then return _enemyCache end
+    if now==_enemyCacheTick then return _enemyCache end
     _enemyCacheTick=now
     local list={}
     local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
@@ -718,42 +727,42 @@ track(RunService.Heartbeat:Connect(function()
     local orig=GunFire.FireServer
     hookfunction(orig,newcclosure(function(self,...)
         local args={...}
-        local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
+        local camPos=workspace.CurrentCamera.CFrame.Position
+        local SA_MAX_DIST=Flags.sa_maxdist or 300
 
-        local SA_MAX_DIST = Flags.sa_maxdist or 300  -- only target enemies within 300 studs
-
-        -- Always Headshot: redirect to Head regardless of sa_part
-        if Flags.always_headshot then
+        -- Always Headshot / Instant Bullet
+        if Flags.always_headshot or Flags.instant_bullet then
             local target=getClosest("Head",math.huge,SA_MAX_DIST)
             if target then
                 local head=target.char:FindFirstChild("Head")
                 if head then
-                    args[1]=head.Position
-                    args[3]=(head.Position-origin).Unit
+                    local aimPos=predictPos(head.Position,target.root.AssemblyLinearVelocity,camPos)
+                    if Flags.instant_bullet and typeof(args[1])=="Vector3" then
+                        args[1]=aimPos  -- teleport muzzle; direction still from camPos
+                    end
+                    args[3]=(aimPos-camPos).Unit
                 end
             end
         end
 
-        -- Silent Aim: always active, capped to SA_MAX_DIST
+        -- Silent Aim: physics-based prediction
         if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
             local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part then
-                    local vel=target.root.AssemblyLinearVelocity
-                    local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/660)
-                    args[3]=(aimPos-origin).Unit
+                    local aimPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,camPos)
+                    args[3]=(aimPos-camPos).Unit
                 end
             end
         end
 
-        -- No Bullet Drop: straight-line direction, capped to SA_MAX_DIST
+        -- No Bullet Drop: straight-line to target
         if Flags.no_bullet_drop then
             local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
-                if part then args[3]=(part.Position-origin).Unit end
+                if part then args[3]=(part.Position-camPos).Unit end
             end
         end
 
@@ -761,7 +770,6 @@ track(RunService.Heartbeat:Connect(function()
             args[3]=workspace.CurrentCamera.CFrame.LookVector
         end
 
-        -- Rapid Fire: fire extra shots immediately
         if Flags.rapid_fire then
             task.defer(function() pcall(orig,self,table.unpack(args)) end)
             task.defer(function() pcall(orig,self,table.unpack(args)) end)
@@ -771,15 +779,13 @@ track(RunService.Heartbeat:Connect(function()
     end))
 end))
 
--- ── No Recoil (throttled: only unbind when tool changes) ──
-local _lastTool=""
+-- ── No Recoil + Instant Reload ──
 track(RunService.Heartbeat:Connect(function()
-    if not Flags.no_recoil then return end
     local char=LocalPlayer.Character; if not char then return end
     for _,tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") and tool.Name~=_lastTool then
-            _lastTool=tool.Name
-            RunService:UnbindFromRenderStep("Recoil_"..tool.Name)
+        if tool:IsA("Tool") then
+            if Flags.no_recoil     then RunService:UnbindFromRenderStep("Recoil_"..tool.Name) end
+            if Flags.instant_reload then RunService:UnbindFromRenderStep("Reload_"..tool.Name) end
         end
     end
 end))
@@ -788,17 +794,15 @@ end))
 track(RunService.RenderStepped:Connect(function()
     if not Flags.ab_enabled and not Flags._fire_held then return end
     local partName=Flags.ab_part or "Head"
-    local target=getClosest(partName,Flags.ab_fov or 120, Flags.ab_maxdist or 300)
+    local target=getClosest(partName,Flags.ab_fov or 120,Flags.ab_maxdist or 300)
     if not target then return end
     local part=getR6Part(target.char,partName)
     if not part then return end
-    local targetPos=part.Position
-    if Flags.ab_predict then
-        local vel=target.root.AssemblyLinearVelocity
-        local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        targetPos=targetPos+vel*(dist/660)
-    end
     local cam=workspace.CurrentCamera
+    local camPos=cam.CFrame.Position
+    local targetPos=Flags.ab_predict
+        and predictPos(part.Position,target.root.AssemblyLinearVelocity,camPos)
+        or part.Position
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
     if not onScreen then return end
     local smooth=math.clamp((Flags.ab_smooth or 8)/50,0.01,1)
