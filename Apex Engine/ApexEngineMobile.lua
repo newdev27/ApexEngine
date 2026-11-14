@@ -66,7 +66,8 @@ end
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
     sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100,
-    no_recoil=true, no_spread=true,
+    no_recoil=true, no_spread=true, no_bullet_drop=true,
+    always_headshot=false, rapid_fire=false,
     ab_enabled=false,  -- toggled by the dedicated Aimbot button
     ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true,
     esp_enabled=true, esp_box=true, esp_box_col=Color3.new(1,1,1),
@@ -581,10 +582,13 @@ do
 end
 makeToggle("No Clip",              "m_noclip")
 makeSep("── Combat ──")
-makeToggle("Silent Aim",  "sa_enabled")
-makeToggle("No Recoil",   "no_recoil")
-makeToggle("No Spread",   "no_spread")
-makeToggle("Aimbot Lock", "ab_enabled")
+makeToggle("Silent Aim",       "sa_enabled")
+makeToggle("Always Headshot",  "always_headshot")
+makeToggle("No Recoil",        "no_recoil")
+makeToggle("No Spread",        "no_spread")
+makeToggle("No Bullet Drop",   "no_bullet_drop")
+makeToggle("Rapid Fire",       "rapid_fire")
+makeToggle("Aimbot Lock",      "ab_enabled")
 
 recTab=nil
 
@@ -714,21 +718,21 @@ track(RunService.Heartbeat:Connect(function()
         local args={...}
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
 
-        if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
-            local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120)
+        -- Always Headshot: redirect to Head regardless of sa_part
+        if Flags.always_headshot then
+            local target=getClosest("Head",math.huge)
             if target then
-                local part=getR6Part(target.char,Flags.sa_part or "Head")
-                if part and typeof(origin)=="Vector3" then
-                    local vel=target.root.AssemblyLinearVelocity
-                    local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/660)
-                    args[3]=(aimPos-origin).Unit
+                local head=target.char:FindFirstChild("Head")
+                if head then
+                    args[1]=head.Position  -- instant bullet at head
+                    args[3]=(head.Position-origin).Unit
                 end
             end
         end
 
-        if Flags.no_spread and typeof(args[3])=="Vector3" then
-            local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120)
+        -- Silent Aim: always active (no key check), math.huge fov = never misses
+        if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
+            local target=getClosest(Flags.sa_part or "Head",math.huge)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part then
@@ -739,6 +743,26 @@ track(RunService.Heartbeat:Connect(function()
                 end
             end
         end
+
+        -- No Bullet Drop: straight-line direction, removes gravity arc
+        if Flags.no_bullet_drop then
+            local target=getClosest(Flags.sa_part or "Head",math.huge)
+            if target then
+                local part=getR6Part(target.char,Flags.sa_part or "Head")
+                if part then args[3]=(part.Position-origin).Unit end
+            end
+        end
+
+        if Flags.no_spread and typeof(args[3])=="Vector3" then
+            args[3]=workspace.CurrentCamera.CFrame.LookVector
+        end
+
+        -- Rapid Fire: fire extra shots immediately
+        if Flags.rapid_fire then
+            task.defer(function() pcall(orig,self,table.unpack(args)) end)
+            task.defer(function() pcall(orig,self,table.unpack(args)) end)
+        end
+
         return orig(self,table.unpack(args))
     end))
 end))
