@@ -65,11 +65,11 @@ end
 
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
-    sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100,
+    sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100, sa_maxdist=300,
     no_recoil=true, no_spread=true, no_bullet_drop=true,
     always_headshot=false, rapid_fire=false,
-    ab_enabled=false,  -- toggled by the dedicated Aimbot button
-    ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true,
+    ab_enabled=false,
+    ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true, ab_maxdist=300,
     esp_enabled=true, esp_box=true, esp_box_col=Color3.new(1,1,1),
     esp_name=true, esp_name_col=Color3.new(1,1,1),
     esp_health=true, esp_health_col=Color3.fromRGB(80,255,120),
@@ -689,11 +689,13 @@ local function screenDist(worldPos)
     return math.sqrt((sp.X-vps.X*0.5)^2+(sp.Y-vps.Y*0.5)^2)
 end
 
-local function getClosest(partName,fovPx)
+local function getClosest(partName,fovPx,maxWorldDist)
     local best,bestDist=nil,fovPx or math.huge
+    local myRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     for _,e in ipairs(getEnemies()) do
         local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
         if part then
+            if maxWorldDist and myRoot and (part.Position-myRoot.Position).Magnitude>maxWorldDist then continue end
             local d=screenDist(part.Position)
             if d<bestDist then bestDist=d;best=e end
         end
@@ -718,21 +720,23 @@ track(RunService.Heartbeat:Connect(function()
         local args={...}
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
 
+        local SA_MAX_DIST = Flags.sa_maxdist or 300  -- only target enemies within 300 studs
+
         -- Always Headshot: redirect to Head regardless of sa_part
         if Flags.always_headshot then
-            local target=getClosest("Head",math.huge)
+            local target=getClosest("Head",math.huge,SA_MAX_DIST)
             if target then
                 local head=target.char:FindFirstChild("Head")
                 if head then
-                    args[1]=head.Position  -- instant bullet at head
+                    args[1]=head.Position
                     args[3]=(head.Position-origin).Unit
                 end
             end
         end
 
-        -- Silent Aim: always active (no key check), math.huge fov = never misses
+        -- Silent Aim: always active, capped to SA_MAX_DIST
         if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
-            local target=getClosest(Flags.sa_part or "Head",math.huge)
+            local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part then
@@ -744,9 +748,9 @@ track(RunService.Heartbeat:Connect(function()
             end
         end
 
-        -- No Bullet Drop: straight-line direction, removes gravity arc
+        -- No Bullet Drop: straight-line direction, capped to SA_MAX_DIST
         if Flags.no_bullet_drop then
-            local target=getClosest(Flags.sa_part or "Head",math.huge)
+            local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part then args[3]=(part.Position-origin).Unit end
@@ -784,7 +788,7 @@ end))
 track(RunService.RenderStepped:Connect(function()
     if not Flags.ab_enabled and not Flags._fire_held then return end
     local partName=Flags.ab_part or "Head"
-    local target=getClosest(partName,Flags.ab_fov or 120, 1000)
+    local target=getClosest(partName,Flags.ab_fov or 120, Flags.ab_maxdist or 300)
     if not target then return end
     local part=getR6Part(target.char,partName)
     if not part then return end
