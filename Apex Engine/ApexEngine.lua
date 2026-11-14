@@ -1,4 +1,3 @@
-
 --[[
     Apex Engine — Brisk Survival cheat
     Designed and developed by F9r (discord: 5nqs)
