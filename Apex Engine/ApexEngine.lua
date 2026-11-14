@@ -1773,6 +1773,20 @@ do
             local flags = ApexEngine.Flags
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
+            -- Aimbot headshot guarantee: when aimbot key held, always redirect to head
+            if flags["ab_enabled"] and isBindHeld(flags["ab_key"] or Enum.KeyCode.E) and not flags["sa_enabled"] then
+                local partName = flags["ab_part"] or "Head"
+                local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 1000)
+                if target then
+                    local part = getR6Part(target.char, partName)
+                    if part then
+                        local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                        args[1] = aimPos
+                        args[3] = (aimPos - origin).Unit
+                    end
+                end
+            end
+
             -- Always Headshot / Instant Bullet: find closest head (no FOV limit), redirect
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
                 local cam = workspace.CurrentCamera
@@ -1835,6 +1849,7 @@ do
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
                             local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                            args[1] = aimPos  -- muzzle at predicted head = server raycast starts inside hitbox
                             args[3] = (aimPos - origin).Unit
                             if flags["bullet_tracers"] then
                                 task.spawn(drawBulletTracer, origin, aimPos)
