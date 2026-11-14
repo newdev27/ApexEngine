@@ -1,4 +1,4 @@
-﻿
+
 --[[
     Apex Engine — Brisk Survival cheat
     Designed and developed by F9r (discord: 5nqs)
@@ -1492,6 +1492,14 @@ do
     trackConnection(RunService.Heartbeat:Connect(function(dt)
         _wespTick += dt; if _wespTick < 0.1 then return end; _wespTick = 0
 
+        local flags   = ApexEngine.Flags
+        local drawn   = {}
+        local cam     = workspace.CurrentCamera
+        local myChar  = LocalPlayer.Character
+        local myRoot  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local maxDist = flags["wesp_maxdist"] or 1000
+        local camPos  = cam.CFrame.Position
+
         -- Harvestables
         if flags["wesp_harv"] or flags["wesp_ore"] then
             local folder = workspace:FindFirstChild("SpawnedHarvestables")
@@ -2964,6 +2972,13 @@ do
     local _c4Tick = 0
     trackConnection(RunService.Heartbeat:Connect(function(dt)
         _c4Tick += dt; if _c4Tick < 0.1 then return end; _c4Tick = 0
+
+        local flags  = ApexEngine.Flags
+        local drawn  = {}
+        local t      = os.time()
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local camPos = workspace.CurrentCamera.CFrame.Position
 
         -- C4
         if flags["wesp_c4"] then
