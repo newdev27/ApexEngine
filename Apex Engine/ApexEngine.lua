@@ -1796,10 +1796,15 @@ do
                 end
             end
 
-            -- No Spread: force exact camera look direction (no random offset)
+            -- No Spread: replace direction with exact predicted aim direction
             if flags["no_spread"] and not _rapidFireActive then
-                if #args >= 3 and typeof(args[3]) == "Vector3" then
-                    args[3] = workspace.CurrentCamera.CFrame.LookVector
+                local target = getClosestEnemy(flags["sa_part"] or "Head", flags["sa_fov"] or 80)
+                if target then
+                    local part = getR6Part(target.char, flags["sa_part"] or "Head")
+                    if part and #args >= 3 and typeof(args[3]) == "Vector3" then
+                        local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
+                        args[3] = (aimPos - origin).Unit
+                    end
                 end
             end
 
