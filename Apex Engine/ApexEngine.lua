@@ -1618,16 +1618,19 @@ do
     end
 
     local function getClosestEnemy(partName, fovPx, maxWorldDist)
-        local best, bestDist = nil, fovPx or math.huge
+        local best, bestDist = nil, math.huge
         local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
-                if maxWorldDist and myRoot and (part.Position - myRoot.Position).Magnitude > maxWorldDist then
-                    continue
+                local worldDist = (part.Position - myRoot.Position).Magnitude
+                if maxWorldDist and worldDist > maxWorldDist then continue end
+                if fovPx and fovPx < math.huge then
+                    local sd = screenDist(part.Position)
+                    if sd > fovPx then continue end
                 end
-                local d = screenDist(part.Position)
-                if d < bestDist then bestDist = d; best = e end
+                if worldDist < bestDist then bestDist = worldDist; best = e end
             end
         end
         return best
@@ -1649,7 +1652,8 @@ do
     local function predictPos(partPos, vel, camPos)
         local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 2000
         local dist = (partPos - camPos).Magnitude
-        return partPos + vel * (dist / bulletSpeed)
+        local ping = LocalPlayer:GetNetworkPing()
+        return partPos + vel * (dist / bulletSpeed + ping * 0.5)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
