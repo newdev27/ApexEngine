@@ -589,6 +589,57 @@ makeToggle("No Spread",        "no_spread")
 makeToggle("No Bullet Drop",   "no_bullet_drop")
 makeToggle("Rapid Fire",       "rapid_fire")
 makeToggle("Aimbot Lock",      "ab_enabled")
+do
+    -- Aimbot lock-on distance slider: 50–500 studs
+    Flags.ab_maxdist = Flags.ab_maxdist or 300
+    local row=makeRow()
+    New("TextLabel",{Text="Lock-On Dist",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=50,500
+    local function setDist(v)
+        v=math.clamp(math.floor(v/10+0.5)*10,MIN,MAX)
+        Flags.ab_maxdist=v; Flags.sa_maxdist=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v).."m"
+    end
+    setDist(Flags.ab_maxdist)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setDist(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setDist(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+end
 
 recTab=nil
 
@@ -690,14 +741,20 @@ local function screenDist(worldPos)
 end
 
 local function getClosest(partName,fovPx,maxWorldDist)
-    local best,bestDist=nil,fovPx or math.huge
+    local best,bestDist=nil,math.huge
     local myRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
     for _,e in ipairs(getEnemies()) do
         local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
         if part then
-            if maxWorldDist and myRoot and (part.Position-myRoot.Position).Magnitude>maxWorldDist then continue end
-            local d=screenDist(part.Position)
-            if d<bestDist then bestDist=d;best=e end
+            local worldDist=(part.Position-myRoot.Position).Magnitude
+            if maxWorldDist and worldDist>maxWorldDist then continue end
+            -- also enforce FOV screen-space cap if provided
+            if fovPx and fovPx<math.huge then
+                local sd=screenDist(part.Position)
+                if sd>fovPx then continue end
+            end
+            if worldDist<bestDist then bestDist=worldDist;best=e end
         end
     end
     return best
@@ -742,7 +799,9 @@ track(RunService.Heartbeat:Connect(function()
                 if part then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/660)
+                    local ping=LocalPlayer:GetNetworkPing()
+                    -- travel time + half ping to account for server-side hitbox lag
+                    local aimPos=part.Position+vel*(dist/660+ping*0.5)
                     args[3]=(aimPos-origin).Unit
                 end
             end
@@ -753,7 +812,13 @@ track(RunService.Heartbeat:Connect(function()
             local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
-                if part then args[3]=(part.Position-origin).Unit end
+                if part then
+                    local vel=target.root.AssemblyLinearVelocity
+                    local ping=LocalPlayer:GetNetworkPing()
+                    local dist=(part.Position-origin).Magnitude
+                    local aimPos=part.Position+vel*(ping*0.5)
+                    args[3]=(aimPos-origin).Unit
+                end
             end
         end
 
@@ -796,7 +861,8 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        targetPos=targetPos+vel*(dist/660)
+        local ping=LocalPlayer:GetNetworkPing()
+        targetPos=targetPos+vel*(dist/660+ping*0.5)
     end
     local cam=workspace.CurrentCamera
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
