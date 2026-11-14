@@ -996,6 +996,7 @@ local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
 miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
 miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
 miscG:AddCheckbox({ Name="No Bullet Drop",  Default=false, Flag="no_bullet_drop" })
+miscG:AddCheckbox({ Name="Instant Reload",  Default=false, Flag="instant_reload" })
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Rapid Fire",      Default=false, Flag="rapid_fire" })
 miscG:AddSlider({   Name="RF Multiplier",   Min=2, Max=10, Default=3, Flag="rapid_fire_mult" })
@@ -1123,6 +1124,7 @@ local PlayerPage = PlayerTab:AddSubtab("Movement")
 
 local moveG = PlayerPage:AddGroup("Movement", Icons.user, "Left", 220)
 moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" })
+moveG:AddKeybind({  Name="Sprint Key",      Default=Enum.KeyCode.LeftShift, Flag="m_omnisprint_key" })
 moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
 moveG:AddSeparator()
 moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
@@ -1486,12 +1488,9 @@ do
         e.bg.Visible = true
     end
 
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        local cam = workspace.CurrentCamera
-        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local maxDist = flags["wesp_maxdist"] or 1000
-        local drawn = {}
+    local _wespTick = 0
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
+        _wespTick += dt; if _wespTick < 0.1 then return end; _wespTick = 0
 
         -- Harvestables
         if flags["wesp_harv"] or flags["wesp_ore"] then
@@ -1637,9 +1636,13 @@ do
         return false
     end
 
-    -- Lightweight prediction: flat 0.1s offset (less aggressive, avoids overshooting)
+    -- Physics-based prediction: dist/bulletSpeed + ping compensation
+    local BULLET_SPEED = 500  -- Brisk Survival default stud/s
     local function predictPos(partPos, vel, camPos)
-        return partPos + vel * 0.1
+        local dist = (partPos - camPos).Magnitude
+        local ping = (LocalPlayer:GetNetworkPing and LocalPlayer:GetNetworkPing() or 0.06)
+        local t = dist / BULLET_SPEED + ping * 0.5
+        return partPos + vel * t
     end
 
     -- ── FOV circle ────────────────────────────────────────────
@@ -1756,21 +1759,22 @@ do
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
             local SA_MAX_DIST = flags["sa_maxdist"] or 300
+            local camPos = workspace.CurrentCamera.CFrame.Position
 
-            -- Always Headshot / Instant Bullet: find closest head, capped to SA_MAX_DIST
+            -- Always Headshot / Instant Bullet
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
                 local target = getClosestEnemy("Head", math.huge, SA_MAX_DIST)
                 local bestHead = target and target.char:FindFirstChild("Head")
-                do
                 if bestHead then
-                    local targetPos = bestHead.Position
+                    local vel = target.root.AssemblyLinearVelocity
+                    local targetPos = predictPos(bestHead.Position, vel, camPos)
                     if flags["instant_bullet"] then
-                        if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = targetPos end
-                        origin = targetPos
+                        -- teleport muzzle to target; keep real camPos for direction calc
+                        if typeof(args[1]) == "Vector3" then args[1] = targetPos end
                     end
-                    local dir = (targetPos - origin)
+                    local dir = targetPos - camPos
                     if dir.Magnitude > 0.01 then args[3] = dir.Unit end
-                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
+                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, camPos, targetPos) end
                     if flags["rapid_fire"] and not _rapidFireActive then
                         local result = orig(self, table.unpack(args))
                         _rapidFireActive = true
@@ -1783,7 +1787,6 @@ do
                     end
                     return orig(self, table.unpack(args))
                 end
-                end  -- close do
             end
 
             -- Silent Aim
@@ -1795,9 +1798,9 @@ do
                     local target = getClosestEnemy(partName, flags["sa_fov"] or 80, SA_MAX_DIST)
                     if target then
                         local part = getR6Part(target.char, partName)
-                        if part and typeof(origin) == "Vector3" then
-                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
-                            args[3] = (aimPos - origin).Unit
+                        if part then
+                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, camPos)
+                            args[3] = (aimPos - camPos).Unit
                             if flags["bullet_tracers"] then
                                 task.spawn(drawBulletTracer, origin, aimPos)
                             end
@@ -1851,20 +1854,21 @@ do
         end))
     end))
 
-    -- No Recoil
-    local _noRecoilUnbound = {}
+    -- No Recoil + Instant Reload: unbind ClientGun RenderStep binds each frame
+    local _lastToolName = ""
     trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
         local char = LocalPlayer.Character
-        if not char then table.clear(_noRecoilUnbound); return end
+        if not char then _lastToolName = ""; return end
         for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and tool.Name ~= _lastToolName then
+                _lastToolName = tool.Name
+                if flags["no_recoil"]       then RunService:UnbindFromRenderStep("Recoil_"..tool.Name) end
+                if flags["instant_reload"]  then RunService:UnbindFromRenderStep("Reload_"..tool.Name) end
+            end
             if tool:IsA("Tool") then
-                local bindName = "Recoil_" .. tool.Name
-                if ApexEngine.Flags["no_recoil"] then
-                    RunService:UnbindFromRenderStep(bindName)
-                    _noRecoilUnbound[bindName] = true
-                elseif _noRecoilUnbound[bindName] then
-                    _noRecoilUnbound[bindName] = nil
-                end
+                if flags["no_recoil"]      then RunService:UnbindFromRenderStep("Recoil_"..tool.Name) end
+                if flags["instant_reload"] then RunService:UnbindFromRenderStep("Reload_"..tool.Name) end
             end
         end
     end))
@@ -1880,10 +1884,10 @@ do
         local part = getR6Part(target.char, partName)
         if not part then return end
         local cam = workspace.CurrentCamera
-        local targetPos = part.Position
-        if flags["ab_predict"] then
-            targetPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, cam.CFrame.Position)
-        end
+        local camPos = cam.CFrame.Position
+        local targetPos = flags["ab_predict"]
+            and predictPos(part.Position, target.root.AssemblyLinearVelocity, camPos)
+            or part.Position
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
         local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
@@ -2158,8 +2162,10 @@ do
         d.tracer.Visible          = true
     end
 
-    -- Main ESP update loop
-    trackConnection(RunService.RenderStepped:Connect(function()
+    -- Main ESP update loop — throttled to 20Hz on Heartbeat (not RenderStepped)
+    local _espTick = 0
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
+        _espTick += dt; if _espTick < 0.05 then return end; _espTick = 0
         local flags = ApexEngine.Flags
         local enabled = flags["esp_enabled"] == true
         local cam = workspace.CurrentCamera
@@ -2884,7 +2890,9 @@ do
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return end
         if not _origWalkSpeed then _origWalkSpeed = hum.WalkSpeed end
-        if hum.MoveDirection.Magnitude > 0.05 then
+        local sprintKey = flags["m_omnisprint_key"] or Enum.KeyCode.LeftShift
+        local held = UserInputService:IsKeyDown(sprintKey)
+        if held and hum.MoveDirection.Magnitude > 0.05 then
             hum.WalkSpeed = 16 + (flags["m_omnisprint_bonus"] or 0)
         else
             hum.WalkSpeed = _origWalkSpeed
@@ -2953,12 +2961,9 @@ do
         e.bg.Visible = true
     end
 
-    trackConnection(RunService.RenderStepped:Connect(function()
-        local flags = ApexEngine.Flags
-        local cam   = workspace.CurrentCamera
-        local camPos = cam.CFrame.Position
-        local t = os.clock()
-        local drawn = {}
+    local _c4Tick = 0
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
+        _c4Tick += dt; if _c4Tick < 0.1 then return end; _c4Tick = 0
 
         -- C4
         if flags["wesp_c4"] then
