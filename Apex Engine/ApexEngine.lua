@@ -852,20 +852,39 @@ function ApexEngine:CreateWindow(cfg)
 
                 function G:AddKeybind(o)
                     local key=o.Default; local r=row(20)
+                    -- key is either an EnumItem (KeyCode or UserInputType for mouse buttons)
+                    local function keyName(k)
+                        if not k then return "None" end
+                        if k == Enum.UserInputType.MouseButton2 then return "RMB" end
+                        if k == Enum.UserInputType.MouseButton1 then return "LMB" end
+                        if k == Enum.UserInputType.MouseButton3 then return "MMB" end
+                        return k.Name
+                    end
                     Label({ Text=o.Name, TextColor3=Theme.TextDisabled, Size=UDim2.new(1,-75,1,0), Parent=r })
                     local b=New("TextButton", {
                         Size=UDim2.fromOffset(70,20), Position=UDim2.new(1,-70,0,0), BackgroundColor3=Theme.FrameInactive,
-                        AutoButtonColor=false, Text=key and key.Name or "None", Font=Theme.Font, TextSize=12,
+                        AutoButtonColor=false, Text=keyName(key), Font=Theme.Font, TextSize=12,
                         TextColor3=Theme.TextDisabled, Parent=r,
                     }, { Corner(3), Stroke() })
                     local listening=false
                     b.MouseButton1Click:Connect(function() listening=true; b.Text="..." end)
                     UserInputService.InputBegan:Connect(function(i,gp)
-                        if listening and i.UserInputType==Enum.UserInputType.Keyboard then
-                            listening=false; key=(i.KeyCode~=Enum.KeyCode.Escape) and i.KeyCode or nil
-                            b.Text=key and key.Name or "None"; flag(o.Flag,key)
-                        elseif not gp and key and i.KeyCode==key and o.Callback then
-                            task.spawn(o.Callback,key)
+                        if listening then
+                            if i.UserInputType==Enum.UserInputType.Keyboard then
+                                listening=false
+                                key=(i.KeyCode~=Enum.KeyCode.Escape) and i.KeyCode or nil
+                                b.Text=keyName(key); flag(o.Flag,key)
+                            elseif i.UserInputType==Enum.UserInputType.MouseButton2
+                                or i.UserInputType==Enum.UserInputType.MouseButton3 then
+                                listening=false
+                                key=i.UserInputType
+                                b.Text=keyName(key); flag(o.Flag,key)
+                            end
+                        elseif not gp and o.Callback then
+                            local isKey = typeof(key)=="EnumItem" and key.EnumType==Enum.KeyCode
+                            if isKey and i.KeyCode==key then
+                                task.spawn(o.Callback,key)
+                            end
                         end
                     end)
                     flag(o.Flag,key)
@@ -950,7 +969,7 @@ local CombatPage = CombatTab:AddSubtab("Main")
 -- Left: Aim Assistance
 local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
 aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
-aimG:AddKeybind({  Name="Silent Aim Key",Default=Enum.KeyCode.Q, Flag="sa_key" })
+aimG:AddKeybind({  Name="SA Hold Key",   Default=nil,   Flag="sa_key" })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
@@ -969,9 +988,6 @@ abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Fl
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
-abG:AddCheckbox({ Name="Camlock",       Default=false, Flag="ab_camlock" })
-abG:AddKeybind({  Name="Camlock Key",   Default=Enum.KeyCode.F, Flag="ab_camlock_key" })
-abG:AddSlider({   Name="Camlock Smooth",Min=1,Max=50,Default=10,Flag="ab_camlock_smooth" })
 
 -- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
@@ -986,10 +1002,6 @@ miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet"
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
-miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
-miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
-miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
 
 -- Right: Snapline
 local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
@@ -1607,6 +1619,19 @@ do
         return best
     end
 
+    -- Helper: check if a bound key (KeyCode or UserInputType mouse button) is held
+    local function isBindHeld(key)
+        if not key then return false end
+        if typeof(key) == "EnumItem" then
+            if key.EnumType == Enum.KeyCode then
+                return UserInputService:IsKeyDown(key)
+            elseif key.EnumType == Enum.UserInputType then
+                return UserInputService:IsMouseButtonPressed(key)
+            end
+        end
+        return false
+    end
+
     -- Lightweight prediction: flat 0.1s offset (less aggressive, avoids overshooting)
     local function predictPos(partPos, vel, camPos)
         return partPos + vel * 0.1
@@ -1779,7 +1804,7 @@ do
             -- Silent Aim
             if flags["sa_enabled"] then
                 local key = flags["sa_key"]
-                local keyHeld = (not key) or UserInputService:IsKeyDown(key)
+                local keyHeld = (not key) or isBindHeld(key)
                 if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
                     local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
@@ -1854,7 +1879,7 @@ do
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
         if not flags["ab_enabled"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_key"] or Enum.KeyCode.E) then return end
+        if not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
         if not target then return end
@@ -1877,7 +1902,7 @@ do
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
         if not flags["tb_enabled"] then return end
-        if not UserInputService:IsKeyDown(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
+        if not isBindHeld(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
         local delay = (flags["tb_delay"] or 50) / 1000
         if os.clock() - _tbLastFire < delay then return end
         local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
@@ -2644,70 +2669,6 @@ do
         snapLine.Size      = UDim2.fromOffset(len, thick)
         snapLine.Rotation  = math.deg(math.atan2(dy, dx))
         snapLine.Visible   = true
-    end))
-end
-
--- ============================================================
--- CAMLOCK
--- ============================================================
-do
-    trackConnection(RunService.RenderStepped:Connect(function(dt)
-        local flags = ApexEngine.Flags
-        if not flags["ab_camlock"] then return end
-        if not UserInputService:IsKeyDown(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
-        local cam = workspace.CurrentCamera
-        local vp  = cam.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local best, bestDist = nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local char = p.Character
-            local hum  = char and char:FindFirstChildOfClass("Humanoid")
-            local head = char and char:FindFirstChild("Head")
-            if hum and hum.Health > 0 and head then
-                local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                if onSc and sp.Z > 0 then
-                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
-                    if d < bestDist then bestDist=d; best=head end
-                end
-            end
-        end
-        if not best then return end
-        local targetPos = best.Position
-        -- velocity prediction
-        local hroot = best.Parent and best.Parent:FindFirstChild("HumanoidRootPart")
-        if hroot then
-            targetPos = targetPos + hroot.AssemblyLinearVelocity * ((flags["ab_camlock_smooth"] or 10) * 0.012)
-        end
-        local smooth = math.clamp((flags["ab_camlock_smooth"] or 10) / 50, 0.01, 1)
-        local w = cam.CFrame
-        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1-smooth, 0.01, 0.99))
-    end))
-end
-
--- ============================================================
--- SPINBOT
--- ============================================================
-do
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        if not flags["spinbot"] then return end
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        local speed = (flags["spinbot_speed"] or 25) * 10
-        local yaw   = (os.clock() * speed) % 360
-        local pitch = 0
-        local mode  = flags["spinbot_pitch"] or "Normal"
-        if mode == "Down" then
-            pitch = -1.3089969389957472
-        elseif mode == "Jitter" then
-            pitch = math.rad(math.random() > 0.5 and 65 or -75)
-        end
-        root.CFrame = CFrame.new(root.Position)
-            * CFrame.Angles(0, math.rad(yaw), 0)
-            * CFrame.Angles(pitch, 0, 0)
     end))
 end
 
