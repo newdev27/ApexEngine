@@ -1781,7 +1781,8 @@ do
                     local part = getR6Part(target.char, partName)
                     if part then
                         local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
-                        args[1] = aimPos
+                        local dist = (part.Position - origin).Magnitude
+                        if dist <= 80 then args[1] = aimPos end  -- muzzle teleport only close range
                         args[3] = (aimPos - origin).Unit
                     end
                 end
@@ -1849,7 +1850,8 @@ do
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
                             local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
-                            args[1] = aimPos  -- muzzle at predicted head = server raycast starts inside hitbox
+                            local dist = (part.Position - origin).Magnitude
+                            if dist <= 80 then args[1] = aimPos end  -- muzzle teleport only close range
                             args[3] = (aimPos - origin).Unit
                             if flags["bullet_tracers"] then
                                 task.spawn(drawBulletTracer, origin, aimPos)
