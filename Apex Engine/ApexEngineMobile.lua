@@ -282,8 +282,6 @@ abBtn.InputEnded:Connect(function(i)
         if os.clock()-_abHoldStart < 0.3 then
             Flags.ab_enabled = not Flags.ab_enabled
         end
-        -- clear sticky lock when button released
-        _stickyTarget=nil;_stickyLostAt=nil
         local col = Flags.ab_enabled and T.ABOn or T.ABOff
         Tween(abBtn,0.15,{BackgroundColor3=col,Size=UDim2.fromOffset(sc(56),sc(56))})
     end
@@ -687,62 +685,15 @@ local function screenDist(worldPos)
     return math.sqrt((sp.X-vps.X*0.5)^2+(sp.Y-vps.Y*0.5)^2)
 end
 
--- sticky target: once locked, hold until lost for >0.4s or dead/out of range
-local _stickyTarget   = nil
-local _stickyLostAt   = nil
-local STICKY_GRACE    = 0.4   -- seconds to hold after losing FOV
-local STICKY_MAX_DIST = 250   -- world-space meters: won't lock past this
-
-local function getClosest(partName,fovPx,maxMeters)
-    local myRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local hardMax=math.min(maxMeters or 1000, STICKY_MAX_DIST)
-    local fov=fovPx or math.huge
-
-    -- validate sticky target still alive and in range
-    if _stickyTarget then
-        local e=_stickyTarget
-        local hum=e.char and e.char:FindFirstChildOfClass("Humanoid")
-        local root=e.char and e.char:FindFirstChild("HumanoidRootPart")
-        local alive=hum and hum.Health>0 and root
-        local inRange=alive and myRoot and (root.Position-myRoot.Position).Magnitude<=hardMax
-        if not alive or not inRange then
-            _stickyTarget=nil;_stickyLostAt=nil
-        else
-            local part=e.char:FindFirstChild(partName or "Head") or root
-            local d=screenDist(part.Position)
-            if d<=fov then
-                -- still in FOV: refresh grace timer and return
-                _stickyLostAt=nil
-                return e
-            else
-                -- outside FOV: start/check grace period
-                local now=os.clock()
-                if not _stickyLostAt then _stickyLostAt=now end
-                if now-_stickyLostAt < STICKY_GRACE then
-                    return e  -- hold the lock during grace window
-                end
-                -- grace expired: release lock
-                _stickyTarget=nil;_stickyLostAt=nil
-            end
-        end
-    end
-
-    -- no sticky target: find closest by world distance first, then screen dist as tiebreak
-    local best,bestWorld,bestScreen=nil,math.huge,math.huge
+local function getClosest(partName,fovPx)
+    local best,bestDist=nil,fovPx or math.huge
     for _,e in ipairs(getEnemies()) do
-        if not myRoot then break end
-        local wDist=(e.root.Position-myRoot.Position).Magnitude
-        if wDist>hardMax or wDist<1 then continue end
         local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
-        if not part then continue end
-        local sDist=screenDist(part.Position)
-        if sDist>fov then continue end
-        -- prefer closer world distance; use screen dist as tiebreak within 20m
-        if wDist < bestWorld-20 or (wDist < bestWorld+20 and sDist < bestScreen) then
-            best=e;bestWorld=wDist;bestScreen=sDist
+        if part then
+            local d=screenDist(part.Position)
+            if d<bestDist then bestDist=d;best=e end
         end
     end
-    if best then _stickyTarget=best;_stickyLostAt=nil end
     return best
 end
 
@@ -753,33 +704,6 @@ local GunFire=nil
 task.spawn(function()
     GunFire=game:GetService("ReplicatedStorage"):WaitForChild("GunFire",15)
 end)
-
--- pending redirect: set on each SA shot, consumed by ClientBullet watcher
-local _pendingRedirect = nil  -- {part, expireAt}
-
--- Watch for ClientBullet spawns and redirect velocity toward target
-track(workspace.DescendantAdded:Connect(function(obj)
-    if not _pendingRedirect then return end
-    if os.clock() > _pendingRedirect.expireAt then _pendingRedirect=nil; return end
-    if not obj.Name:find("Bullet") and not obj.Name:find("bullet") then return end
-    local targetPart = _pendingRedirect.part
-    _pendingRedirect = nil
-    task.defer(function()
-        if not obj or not obj.Parent then return end
-        if not targetPart or not targetPart.Parent then return end
-        local dir = (targetPart.Position - obj.Position)
-        if dir.Magnitude < 0.01 then return end
-        -- redirect AssemblyLinearVelocity toward target
-        local speed = obj:IsA("BasePart") and obj.AssemblyLinearVelocity.Magnitude or 500
-        speed = math.max(speed, 300)
-        if obj:IsA("BasePart") then
-            obj.AssemblyLinearVelocity = dir.Unit * speed
-        end
-        -- also try BodyVelocity if present
-        local bv = obj:FindFirstChildOfClass("BodyVelocity")
-        if bv then bv.Velocity = dir.Unit * speed end
-    end)
-end))
 
 local _hooked=false
 track(RunService.Heartbeat:Connect(function()
@@ -799,7 +723,6 @@ track(RunService.Heartbeat:Connect(function()
                     local dist=(part.Position-origin).Magnitude
                     local aimPos=part.Position+vel*(dist/660)
                     args[3]=(aimPos-origin).Unit
-                    _pendingRedirect={part=part, expireAt=os.clock()+0.5}
                 end
             end
         end
