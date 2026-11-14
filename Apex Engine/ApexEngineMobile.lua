@@ -66,7 +66,7 @@ end
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
     sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100,
-    no_recoil=true, no_spread=true,
+    no_recoil=true, no_spread=true, no_bullet_drop=false, instant_reload=false,
     ab_enabled=false,  -- toggled by the dedicated Aimbot button
     ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true,
     esp_enabled=true, esp_box=true, esp_box_col=Color3.new(1,1,1),
@@ -581,10 +581,12 @@ do
 end
 makeToggle("No Clip",              "m_noclip")
 makeSep("── Combat ──")
-makeToggle("Silent Aim",  "sa_enabled")
-makeToggle("No Recoil",   "no_recoil")
-makeToggle("No Spread",   "no_spread")
-makeToggle("Aimbot Lock", "ab_enabled")
+makeToggle("Silent Aim",    "sa_enabled")
+makeToggle("No Recoil",     "no_recoil")
+makeToggle("No Spread",     "no_spread")
+makeToggle("No Bullet Drop","no_bullet_drop")
+makeToggle("Instant Reload","instant_reload")
+makeToggle("Aimbot Lock",   "ab_enabled")
 
 recTab=nil
 
@@ -659,7 +661,7 @@ local _enemyCache={}
 local _enemyCacheTick=0
 local function getEnemies()
     local now=os.clock()
-    if now-_enemyCacheTick < 0 then return _enemyCache end
+    if now == _enemyCacheTick then return _enemyCache end
     _enemyCacheTick=now
     local list={}
     local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
@@ -685,11 +687,13 @@ local function screenDist(worldPos)
     return math.sqrt((sp.X-vps.X*0.5)^2+(sp.Y-vps.Y*0.5)^2)
 end
 
-local function getClosest(partName,fovPx)
+local function getClosest(partName,fovPx,maxWorldDist)
     local best,bestDist=nil,fovPx or math.huge
+    local myRoot=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     for _,e in ipairs(getEnemies()) do
         local part=e.char:FindFirstChild(partName or "Head") or e.char:FindFirstChild("HumanoidRootPart")
         if part then
+            if maxWorldDist and myRoot and (part.Position-myRoot.Position).Magnitude>maxWorldDist then continue end
             local d=screenDist(part.Position)
             if d<bestDist then bestDist=d;best=e end
         end
@@ -715,14 +719,21 @@ track(RunService.Heartbeat:Connect(function()
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
 
         if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
-            local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120)
+            local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120,500)
             if target then
                 local part=getR6Part(target.char,Flags.sa_part or "Head")
                 if part and typeof(origin)=="Vector3" then
                     local vel=target.root.AssemblyLinearVelocity
                     local dist=(part.Position-origin).Magnitude
-                    local aimPos=part.Position+vel*(dist/660)
-                    args[3]=(aimPos-origin).Unit
+                    local ping=math.clamp((LocalPlayer:GetNetworkPing and LocalPlayer:GetNetworkPing() or 0.06),0,0.3)
+                    local travelTime=dist/500+ping
+                    local lateralVel=Vector3.new(vel.X,0,vel.Z)
+                    local lateralSpeed=lateralVel.Magnitude
+                    local extraLead=lateralSpeed>20 and (lateralSpeed/500) or 0
+                    local aimPos=part.Position+vel*(travelTime+extraLead)
+                    local dir=aimPos-origin
+                    if Flags.no_bullet_drop then dir=Vector3.new(dir.X,0,dir.Z) end
+                    if dir.Magnitude>0.01 then args[3]=dir.Unit end
                 end
             end
         end
@@ -732,6 +743,33 @@ track(RunService.Heartbeat:Connect(function()
         end
         return orig(self,table.unpack(args))
     end))
+end))
+
+-- ── Instant Reload ──
+local _reloadHookedM=false
+track(RunService.Heartbeat:Connect(function()
+    if _reloadHookedM or not hookfunction then return end
+    local rs2=game:GetService("ReplicatedStorage")
+    local rr=rs2:FindFirstChild("GunReload") or rs2:FindFirstChild("Reload") or rs2:FindFirstChild("ReloadGun")
+    if not rr then return end
+    _reloadHookedM=true
+    local origR=rr.FireServer
+    hookfunction(origR,newcclosure(function(self,...)
+        if not Flags.instant_reload then return origR(self,...) end
+        local res=origR(self,...)
+        task.delay(0.05,function() pcall(origR,self,...) end)
+        return res
+    end))
+end))
+track(RunService.Heartbeat:Connect(function()
+    if not Flags.instant_reload then return end
+    local char=LocalPlayer.Character;if not char then return end
+    for _,tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            RunService:UnbindFromRenderStep("Reload_"..tool.Name)
+            RunService:UnbindFromRenderStep("GunReload_"..tool.Name)
+        end
+    end
 end))
 
 -- ── No Recoil (throttled: only unbind when tool changes) ──
@@ -751,7 +789,7 @@ end))
 track(RunService.RenderStepped:Connect(function()
     if not Flags.ab_enabled and not Flags._fire_held then return end
     local partName=Flags.ab_part or "Head"
-    local target=getClosest(partName,Flags.ab_fov or 120, 1000)
+    local target=getClosest(partName,Flags.ab_fov or 120,500)
     if not target then return end
     local part=getR6Part(target.char,partName)
     if not part then return end
@@ -759,7 +797,12 @@ track(RunService.RenderStepped:Connect(function()
     if Flags.ab_predict then
         local vel=target.root.AssemblyLinearVelocity
         local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        targetPos=targetPos+vel*(dist/660)
+        local ping=math.clamp((LocalPlayer:GetNetworkPing and LocalPlayer:GetNetworkPing() or 0.06),0,0.3)
+        local travelTime=dist/500+ping
+        local lateralVel=Vector3.new(vel.X,0,vel.Z)
+        local lateralSpeed=lateralVel.Magnitude
+        local extraLead=lateralSpeed>20 and (lateralSpeed/500) or 0
+        targetPos=targetPos+vel*(travelTime+extraLead)
     end
     local cam=workspace.CurrentCamera
     local _,onScreen=cam:WorldToViewportPoint(targetPos)
