@@ -988,6 +988,9 @@ abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Fl
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
+abG:AddCheckbox({ Name="Camlock",       Default=false, Flag="ab_camlock" })
+abG:AddKeybind({  Name="Camlock Key",   Default=Enum.KeyCode.F, Flag="ab_camlock_key" })
+abG:AddSlider({   Name="Camlock Smooth",Min=1,Max=50,Default=10,Flag="ab_camlock_smooth" })
 
 -- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
@@ -1002,6 +1005,10 @@ miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet"
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
+miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
+miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
+miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
 
 -- Right: Snapline
 local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
@@ -2669,6 +2676,70 @@ do
         snapLine.Size      = UDim2.fromOffset(len, thick)
         snapLine.Rotation  = math.deg(math.atan2(dy, dx))
         snapLine.Visible   = true
+    end))
+end
+
+-- ============================================================
+-- CAMLOCK
+-- ============================================================
+do
+    trackConnection(RunService.RenderStepped:Connect(function(dt)
+        local flags = ApexEngine.Flags
+        if not flags["ab_camlock"] then return end
+        if not isBindHeld(flags["ab_camlock_key"] or Enum.KeyCode.F) then return end
+        local cam = workspace.CurrentCamera
+        local vp  = cam.ViewportSize
+        local cx, cy = vp.X/2, vp.Y/2
+        local best, bestDist = nil, math.huge
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p == LocalPlayer then continue end
+            local char = p.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            local head = char and char:FindFirstChild("Head")
+            if hum and hum.Health > 0 and head then
+                local sp, onSc = cam:WorldToViewportPoint(head.Position)
+                if onSc and sp.Z > 0 then
+                    local d = math.sqrt((sp.X-cx)^2+(sp.Y-cy)^2)
+                    if d < bestDist then bestDist=d; best=head end
+                end
+            end
+        end
+        if not best then return end
+        local targetPos = best.Position
+        -- velocity prediction
+        local hroot = best.Parent and best.Parent:FindFirstChild("HumanoidRootPart")
+        if hroot then
+            targetPos = targetPos + hroot.AssemblyLinearVelocity * ((flags["ab_camlock_smooth"] or 10) * 0.012)
+        end
+        local smooth = math.clamp((flags["ab_camlock_smooth"] or 10) / 50, 0.01, 1)
+        local w = cam.CFrame
+        cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1-smooth, 0.01, 0.99))
+    end))
+end
+
+-- ============================================================
+-- SPINBOT
+-- ============================================================
+do
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        if not flags["spinbot"] then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local speed = (flags["spinbot_speed"] or 25) * 10
+        local yaw   = (os.clock() * speed) % 360
+        local pitch = 0
+        local mode  = flags["spinbot_pitch"] or "Normal"
+        if mode == "Down" then
+            pitch = -1.3089969389957472
+        elseif mode == "Jitter" then
+            pitch = math.rad(math.random() > 0.5 and 65 or -75)
+        end
+        root.CFrame = CFrame.new(root.Position)
+            * CFrame.Angles(0, math.rad(yaw), 0)
+            * CFrame.Angles(pitch, 0, 0)
     end))
 end
 
