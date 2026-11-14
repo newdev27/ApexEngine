@@ -1561,16 +1561,15 @@ do
 
     -- ── Shared helpers ────────────────────────────────────────
     -- Enemy list cache (refreshed every frame for accurate positions)
-    local _enemyCache, _enemyCacheTick = {}, 0
+    local _enemyCache, _enemyCacheTick = {}, -1
     local function getEnemies()
         local now = os.clock()
-        if now - _enemyCacheTick < 0 then return _enemyCache end
+        if now == _enemyCacheTick then return _enemyCache end
         _enemyCacheTick = now
         local list = {}
         local myClanId = ApexEngine.Flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
         for _, p in ipairs(Players:GetPlayers()) do
             if p == LocalPlayer then continue end
-            -- Team check: skip players sharing our ClanId
             if myClanId ~= nil and p:GetAttribute("ClanId") == myClanId then continue end
             local char = p.Character
             local hum  = char and char:FindFirstChildOfClass("Humanoid")
@@ -1596,54 +1595,15 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
-    -- Sticky target system: holds lock for STICKY_GRACE seconds after losing FOV
-    local _stickyEnemy    = nil
-    local _stickyLostAt   = nil
-    local STICKY_GRACE    = 0.4
-    local COMBAT_MAX_DIST = 500  -- hard world-space cap in studs
-
     local function getClosestEnemy(partName, fovPx)
-        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local fov = fovPx or math.huge
-
-        -- validate sticky
-        if _stickyEnemy then
-            local e = _stickyEnemy
-            local hum  = e.char and e.char:FindFirstChildOfClass("Humanoid")
-            local root = e.char and e.char:FindFirstChild("HumanoidRootPart")
-            local alive = hum and hum.Health > 0 and root
-            local inRange = alive and myRoot and (root.Position - myRoot.Position).Magnitude <= COMBAT_MAX_DIST
-            if not alive or not inRange then
-                _stickyEnemy = nil; _stickyLostAt = nil
-            else
-                local part = getAimPart(e.char, partName or "Head")
-                local d = part and screenDist(part.Position) or math.huge
-                if d <= fov then
-                    _stickyLostAt = nil; return e
-                else
-                    local now = os.clock()
-                    if not _stickyLostAt then _stickyLostAt = now end
-                    if now - _stickyLostAt < STICKY_GRACE then return e end
-                    _stickyEnemy = nil; _stickyLostAt = nil
-                end
-            end
-        end
-
-        -- pick new target: world-distance primary, screen-dist tiebreak within 20m
-        local best, bestWorld, bestScreen = nil, math.huge, math.huge
+        local best, bestDist = nil, fovPx or math.huge
         for _, e in ipairs(getEnemies()) do
-            if not myRoot then break end
-            local wDist = (e.root.Position - myRoot.Position).Magnitude
-            if wDist > COMBAT_MAX_DIST or wDist < 1 then continue end
             local part = getAimPart(e.char, partName or "Head")
-            if not part then continue end
-            local sDist = screenDist(part.Position)
-            if sDist > fov then continue end
-            if wDist < bestWorld - 20 or (wDist < bestWorld + 20 and sDist < bestScreen) then
-                best = e; bestWorld = wDist; bestScreen = sDist
+            if part then
+                local d = screenDist(part.Position)
+                if d < bestDist then bestDist = d; best = e end
             end
         end
-        if best then _stickyEnemy = best; _stickyLostAt = nil end
         return best
     end
 
@@ -1765,20 +1725,21 @@ do
             local flags = ApexEngine.Flags
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
-            -- Always Headshot / Instant Bullet: find closest head in FOV, redirect
+            -- Always Headshot / Instant Bullet: find closest head (no FOV limit), redirect
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
                 local cam = workspace.CurrentCamera
-                local vp  = cam.ViewportSize
-                local center = Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-                local fovR = flags["sa_fov"] or 80
-                local bestDist, bestHead = fovR, nil
+                local bestDist, bestHead = math.huge, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
+                        local myClanId = flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
+                        if myClanId ~= nil and p:GetAttribute("ClanId") == myClanId then continue end
+                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
                         local head = p.Character:FindFirstChild("Head")
-                        if head then
+                        if head and hum and hum.Health > 0 then
                             local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                            if onSc and sp.Z > 0.01 then
-                                local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                            if onSc and sp.Z > 0 then
+                                local vp = cam.ViewportSize
+                                local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(vp.X*0.5, vp.Y*0.5)).Magnitude
                                 if d < bestDist then bestDist = d; bestHead = head end
                             end
                         end
@@ -1787,14 +1748,14 @@ do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- move muzzle to just behind target so bullet arrives instantly
-                        local delta = origin - targetPos
-                        local muzzle = delta.Magnitude > 0.01 and (targetPos + delta.Unit * 2) or (targetPos + Vector3.new(0,0,2))
-                        if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = muzzle end
-                        origin = muzzle
+                        -- place muzzle at target so bullet has zero travel distance
+                        if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = targetPos end
+                        origin = targetPos
                     end
-                    local dir = (targetPos - origin).Unit
-                    if #args >= 3 and typeof(args[3]) == "Vector3" then args[3] = dir end
+                    local dir = (targetPos - origin)
+                    if dir.Magnitude > 0.01 then
+                        args[3] = dir.Unit
+                    end
                     if flags["bullet_tracers"] then
                         task.spawn(drawBulletTracer, origin, targetPos)
                     end
