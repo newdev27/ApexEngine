@@ -972,6 +972,8 @@ aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
 aimG:AddKeybind({  Name="SA Hold Key",   Default=nil,   Flag="sa_key" })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
+aimG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=1000,Suffix="m",Flag="sa_maxdist" })
+aimG:AddSlider({   Name="Bullet Speed",  Min=100,Max=5000,Default=2000,Suffix="s/s",Flag="sa_bulletspeed" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
 aimG:AddSeparator()
 aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
@@ -985,6 +987,7 @@ abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
 abG:AddKeybind({  Name="Aimbot Key",    Default=Enum.KeyCode.E, Flag="ab_key" })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
+abG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
@@ -1614,11 +1617,15 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
-    local function getClosestEnemy(partName, fovPx)
+    local function getClosestEnemy(partName, fovPx, maxWorldDist)
         local best, bestDist = nil, fovPx or math.huge
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
+                if maxWorldDist and myRoot and (part.Position - myRoot.Position).Magnitude > maxWorldDist then
+                    continue
+                end
                 local d = screenDist(part.Position)
                 if d < bestDist then bestDist = d; best = e end
             end
@@ -1639,9 +1646,10 @@ do
         return false
     end
 
-    -- Lightweight prediction: flat 0.1s offset (less aggressive, avoids overshooting)
     local function predictPos(partPos, vel, camPos)
-        return partPos + vel * 0.1
+        local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 2000
+        local dist = (partPos - camPos).Magnitude
+        return partPos + vel * (dist / bulletSpeed)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
@@ -1814,7 +1822,7 @@ do
                 local keyHeld = (not key) or isBindHeld(key)
                 if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
+                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80, flags["sa_maxdist"] or 1000)
                     if target then
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
@@ -1888,7 +1896,7 @@ do
         if not flags["ab_enabled"] then return end
         if not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
-        local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
+        local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 1000)
         if not target then return end
         local part = getR6Part(target.char, partName)
         if not part then return end
