@@ -972,6 +972,7 @@ aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
 aimG:AddKeybind({  Name="SA Hold Key",   Default=nil,   Flag="sa_key" })
 aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
 aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
+aimG:AddSlider({   Name="Max Distance",  Min=50,Max=1000,Default=300,Suffix="m",Flag="sa_maxdist" })
 aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
 aimG:AddSeparator()
 aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
@@ -985,6 +986,7 @@ abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
 abG:AddKeybind({  Name="Aimbot Key",    Default=Enum.KeyCode.E, Flag="ab_key" })
 abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
 abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
+abG:AddSlider({   Name="Max Distance",  Min=50,Max=1000,Default=300,Suffix="m",Flag="ab_maxdist" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
 abG:AddSeparator()
@@ -993,6 +995,7 @@ abG:AddSeparator()
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
 miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
 miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
+miscG:AddCheckbox({ Name="No Bullet Drop",  Default=false, Flag="no_bullet_drop" })
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Rapid Fire",      Default=false, Flag="rapid_fire" })
 miscG:AddSlider({   Name="RF Multiplier",   Min=2, Max=10, Default=3, Flag="rapid_fire_mult" })
@@ -1607,11 +1610,13 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
-    local function getClosestEnemy(partName, fovPx)
+    local function getClosestEnemy(partName, fovPx, maxWorldDist)
         local best, bestDist = nil, fovPx or math.huge
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
             if part then
+                if maxWorldDist and myRoot and (part.Position - myRoot.Position).Magnitude > maxWorldDist then continue end
                 local d = screenDist(part.Position)
                 if d < bestDist then bestDist = d; best = e end
             end
@@ -1750,55 +1755,35 @@ do
             local flags = ApexEngine.Flags
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
-            -- Always Headshot / Instant Bullet: find closest head (no FOV limit), redirect
+            local SA_MAX_DIST = flags["sa_maxdist"] or 300
+
+            -- Always Headshot / Instant Bullet: find closest head, capped to SA_MAX_DIST
             if (flags["always_headshot"] or flags["instant_bullet"]) and not _rapidFireActive then
-                local cam = workspace.CurrentCamera
-                local bestDist, bestHead = math.huge, nil
-                for _, p in ipairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character then
-                        local myClanId = flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
-                        if myClanId ~= nil and p:GetAttribute("ClanId") == myClanId then continue end
-                        local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                        local head = p.Character:FindFirstChild("Head")
-                        if head and hum and hum.Health > 0 then
-                            local sp, onSc = cam:WorldToViewportPoint(head.Position)
-                            if onSc and sp.Z > 0 then
-                                local vp = cam.ViewportSize
-                                local d = (Vector2.new(sp.X, sp.Y) - Vector2.new(vp.X*0.5, vp.Y*0.5)).Magnitude
-                                if d < bestDist then bestDist = d; bestHead = head end
-                            end
-                        end
-                    end
-                end
+                local target = getClosestEnemy("Head", math.huge, SA_MAX_DIST)
+                local bestHead = target and target.char:FindFirstChild("Head")
+                do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- place muzzle at target so bullet has zero travel distance
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = targetPos end
                         origin = targetPos
                     end
                     local dir = (targetPos - origin)
-                    if dir.Magnitude > 0.01 then
-                        args[3] = dir.Unit
-                    end
-                    if flags["bullet_tracers"] then
-                        task.spawn(drawBulletTracer, origin, targetPos)
-                    end
+                    if dir.Magnitude > 0.01 then args[3] = dir.Unit end
+                    if flags["bullet_tracers"] then task.spawn(drawBulletTracer, origin, targetPos) end
                     if flags["rapid_fire"] and not _rapidFireActive then
                         local result = orig(self, table.unpack(args))
                         _rapidFireActive = true
                         task.spawn(function()
                             local extra = math.max(1, math.floor(flags["rapid_fire_mult"] or 3) - 1)
-                            for _ = 1, extra do
-                                task.wait()
-                                task.spawn(function() orig(self, table.unpack(args)) end)
-                            end
+                            for _ = 1, extra do task.wait(); task.spawn(function() orig(self, table.unpack(args)) end) end
                             _rapidFireActive = false
                         end)
                         return result
                     end
                     return orig(self, table.unpack(args))
                 end
+                end  -- close do
             end
 
             -- Silent Aim
@@ -1807,7 +1792,7 @@ do
                 local keyHeld = (not key) or isBindHeld(key)
                 if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
                     local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80)
+                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80, SA_MAX_DIST)
                     if target then
                         local part = getR6Part(target.char, partName)
                         if part and typeof(origin) == "Vector3" then
@@ -1825,6 +1810,15 @@ do
             if flags["no_spread"] and not _rapidFireActive then
                 if #args >= 3 and typeof(args[3]) == "Vector3" then
                     args[3] = workspace.CurrentCamera.CFrame.LookVector
+                end
+            end
+
+            -- No Bullet Drop: straight-line direction to target, removes gravity arc
+            if flags["no_bullet_drop"] and not _rapidFireActive then
+                local target = getClosestEnemy(flags["sa_part"] or "Head", math.huge, SA_MAX_DIST)
+                if target then
+                    local part = getR6Part(target.char, flags["sa_part"] or "Head")
+                    if part then args[3] = (part.Position - origin).Unit end
                 end
             end
 
@@ -1881,7 +1875,7 @@ do
         if not flags["ab_enabled"] then return end
         if not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
-        local target = getClosestEnemy(partName, flags["ab_fov"] or 80)
+        local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 300)
         if not target then return end
         local part = getR6Part(target.char, partName)
         if not part then return end
