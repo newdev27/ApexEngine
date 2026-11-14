@@ -1647,12 +1647,9 @@ do
         return best
     end
 
-    -- Physics-based prediction: 575 effective speed accounts for Roblox
-    -- network-replication pre-extrapolation on AssemblyLinearVelocity
-    local BULLET_SPEED = 660
+    -- Lightweight prediction: flat 0.1s offset (less aggressive, avoids overshooting)
     local function predictPos(partPos, vel, camPos)
-        local dist = (partPos - camPos).Magnitude
-        return partPos + vel * (dist / BULLET_SPEED)
+        return partPos + vel * 0.1
     end
 
     -- ── FOV circle ────────────────────────────────────────────
