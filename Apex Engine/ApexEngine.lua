@@ -1397,22 +1397,16 @@ do
             local sh = workspace:FindFirstChild("SpawnedHarvestables")
             if sh then
                 for _,v in ipairs(sh:GetChildren()) do
-                    local tf = v:GetAttribute("TemplateFolder")
-                    if tf=="Trees" or tf=="PineTrees" then
-                        local leaves = v:FindFirstChild("Leaves")
-                        if leaves then hideObj(leaves) end
-                    end
+                    local leaves = v:FindFirstChild("Leaves")
+                    if leaves then hideObj(leaves) end
                 end
                 if not _noTreesConn then
                     _noTreesConn = sh.ChildAdded:Connect(function(v)
                         if not ApexEngine.Flags["w_notrees"] then return end
-                        local tf = v:GetAttribute("TemplateFolder")
-                        if tf=="Trees" or tf=="PineTrees" then
-                            task.defer(function()
-                                local leaves = v:FindFirstChild("Leaves")
-                                if leaves then hideObj(leaves) end
-                            end)
-                        end
+                        task.defer(function()
+                            local leaves = v:FindFirstChild("Leaves")
+                            if leaves then hideObj(leaves) end
+                        end)
                     end)
                 end
             end
@@ -1617,8 +1611,21 @@ do
         return math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2)
     end
 
+    local _visParamsAim = RaycastParams.new()
+    _visParamsAim.FilterType = Enum.RaycastFilterType.Exclude
+    local function isEnemyVisible(e)
+        local char = e.char
+        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+        if not torso then return false end
+        local cam = workspace.CurrentCamera
+        _visParamsAim.FilterDescendantsInstances = { LocalPlayer.Character, char }
+        local hit = workspace:Raycast(cam.CFrame.Position, torso.Position - cam.CFrame.Position, _visParamsAim)
+        return hit == nil
+    end
+
     local function getClosestEnemy(partName, fovPx, maxWorldDist)
-        local best, bestDist = nil, math.huge
+        local bestVisible, bestVisibleDist = nil, math.huge
+        local bestAny, bestAnyDist = nil, math.huge
         local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not myRoot then return nil end
         for _, e in ipairs(getEnemies()) do
@@ -1630,10 +1637,14 @@ do
                     local sd = screenDist(part.Position)
                     if sd > fovPx then continue end
                 end
-                if worldDist < bestDist then bestDist = worldDist; best = e end
+                if isEnemyVisible(e) then
+                    if worldDist < bestVisibleDist then bestVisibleDist = worldDist; bestVisible = e end
+                else
+                    if worldDist < bestAnyDist then bestAnyDist = worldDist; bestAny = e end
+                end
             end
         end
-        return best
+        return bestVisible or bestAny
     end
 
     -- Helper: check if a bound key (KeyCode or UserInputType mouse button) is held
@@ -2520,49 +2531,59 @@ end
 -- X-RAY
 -- ============================================================
 do
-    local _xrayData = {} -- [player] = Highlight
+    local _xrayParts = {} -- part -> original LocalTransparencyModifier
+    local _prevXray = false
 
-    local function ensureXray(p)
-        if _xrayData[p] then return end
-        local hl = Instance.new("Highlight")
-        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        hl.FillTransparency = 0.5
-        hl.OutlineTransparency = 0
-        hl.Enabled = false
-        hl.Parent = game:GetService("CoreGui")
-        _xrayData[p] = hl
-    end
-
-    local function removeXray(p)
-        local hl = _xrayData[p]
-        if hl then pcall(function() hl:Destroy() end); _xrayData[p] = nil end
-    end
-
-    trackConnection(RunService.Heartbeat:Connect(function()
-        local flags = ApexEngine.Flags
-        local enabled = flags["m_xray"] == true
-        local col = flags["m_xray_col"] or Color3.fromRGB(255, 80, 200)
+    local function getCharParts()
+        local set = {}
         for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            ensureXray(p)
-            local hl = _xrayData[p]
-            local char = p.Character
-            if enabled and char then
-                hl.Adornee = char
-                hl.FillColor = col
-                hl.OutlineColor = col
-                hl.Enabled = true
-            else
-                hl.Enabled = false
+            if p.Character then
+                for _, v in ipairs(p.Character:GetDescendants()) do
+                    if v:IsA("BasePart") then set[v] = true end
+                end
             end
         end
-        -- clean up
-        for p in pairs(_xrayData) do
-            if not p.Parent then removeXray(p) end
+        local char = LocalPlayer.Character
+        if char then
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then set[v] = true end
+            end
         end
-    end))
+        return set
+    end
 
-    Players.PlayerRemoving:Connect(removeXray)
+    local function applyXray()
+        local charParts = getCharParts()
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v:IsA("BasePart") and not charParts[v] then
+                if _xrayParts[v] == nil then
+                    _xrayParts[v] = v.LocalTransparencyModifier
+                end
+                v.LocalTransparencyModifier = 0.95
+            end
+        end
+    end
+
+    local function removeXray()
+        for part, orig in pairs(_xrayParts) do
+            pcall(function() part.LocalTransparencyModifier = orig end)
+        end
+        table.clear(_xrayParts)
+    end
+
+    local _xrayTick = 0
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
+        local enabled = ApexEngine.Flags["m_xray"] == true
+        if enabled ~= _prevXray then
+            _prevXray = enabled
+            if not enabled then removeXray() end
+        end
+        if not enabled then return end
+        _xrayTick += dt
+        if _xrayTick < 0.5 then return end  -- re-scan every 0.5s for new parts
+        _xrayTick = 0
+        applyXray()
+    end))
 end
 
 -- ============================================================
