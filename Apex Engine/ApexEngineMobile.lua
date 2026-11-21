@@ -84,7 +84,8 @@ local Flags = {
     w_fullbright=false, w_nofog=false, w_noshadows=false,
     w_notrees=false, w_nograss=false,
     m_omnisprint=false, m_omnisprint_bonus=0,
-    m_noclip=false, m_xray=false, m_xray_col=Color3.fromRGB(255,80,200),
+    m_noclip=false, m_xray=false, m_xray_trans=0.85,
+    m_freecam=false, m_freecam_speed=40,
     crosshair_enabled=true, crosshair_col=Color3.new(1,1,1),
     crosshair_gap=4, crosshair_size=8, crosshair_thick=1,
     _fire_held=false,
@@ -504,6 +505,57 @@ makeSep("── Team Check ──")
 makeToggle("Team Check",        "tc_enabled")
 makeSep("── Combat Visuals ──")
 makeToggle("X-Ray",             "m_xray")
+do
+    -- X-Ray transparency slider: 0.1 (barely see-through) to 0.98 (nearly invisible)
+    local row=makeRow()
+    New("TextLabel",{Text="X-Ray Trans",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=0.1,0.98
+    local function setTrans(v)
+        v=math.clamp(math.floor(v*100+0.5)/100,MIN,MAX)
+        Flags.m_xray_trans=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(math.floor(v*100)).."%%"
+    end
+    setTrans(Flags.m_xray_trans)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setTrans(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setTrans(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
+end
 
 -- ── WORLD TAB ─────────────────────────────────────────────
 recTab="World"
@@ -581,6 +633,58 @@ do
     end))
 end
 makeToggle("No Clip",              "m_noclip")
+makeToggle("Free Cam",             "m_freecam")
+do
+    -- FreeCam speed slider: 10–200
+    local row=makeRow()
+    New("TextLabel",{Text="Cam Speed",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=10,200
+    local function setSpd(v)
+        v=math.clamp(math.floor(v+0.5),MIN,MAX)
+        Flags.m_freecam_speed=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v)
+    end
+    setSpd(Flags.m_freecam_speed)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setSpd(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setSpd(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
+end
 makeSep("── Combat ──")
 makeToggle("Silent Aim",       "sa_enabled")
 makeToggle("Always Headshot",  "always_headshot")
@@ -1289,7 +1393,7 @@ do
         for _,v in ipairs(workspace:GetDescendants()) do
             if v:IsA("BasePart") and not charParts[v] then
                 if _xrayParts[v]==nil then _xrayParts[v]=v.LocalTransparencyModifier end
-                v.LocalTransparencyModifier=0.95
+                v.LocalTransparencyModifier=Flags.m_xray_trans or 0.85
             end
         end
     end
@@ -1430,6 +1534,85 @@ do
             if terrain then terrain.Decoration=true end
         end
         _prevGrass=cur
+    end))
+end
+
+-- ══════════════════════════════════════════════════════════
+-- FREE CAM  (mobile joystick look via GetMouseDelta, WASD-free)
+-- Character is frozen in place while active
+-- ══════════════════════════════════════════════════════════
+do
+    local _prevFC=false
+    local _fcCamCF=nil
+    local _fcYaw,_fcPitch=0,0
+    local _bv,_bg=nil,nil  -- BodyVelocity + BodyGyro to freeze char
+
+    local function freezeChar(on)
+        local char=LocalPlayer.Character;if not char then return end
+        local root=char:FindFirstChild("HumanoidRootPart")
+        local hum=char:FindFirstChildOfClass("Humanoid")
+        if not root then return end
+        if on then
+            if hum then hum.PlatformStand=true end
+            if not _bv then
+                _bv=Instance.new("BodyVelocity")
+                _bv.Velocity=Vector3.zero;_bv.MaxForce=Vector3.new(1e5,1e5,1e5)
+                _bv.P=1e4;_bv.Parent=root
+            end
+            if not _bg then
+                _bg=Instance.new("BodyGyro")
+                _bg.CFrame=root.CFrame;_bg.MaxTorque=Vector3.new(1e5,1e5,1e5)
+                _bg.P=1e4;_bg.Parent=root
+            end
+        else
+            if hum then hum.PlatformStand=false end
+            if _bv then _bv:Destroy();_bv=nil end
+            if _bg then _bg:Destroy();_bg=nil end
+        end
+    end
+
+    track(RunService.RenderStepped:Connect(function(dt)
+        local cur=Flags.m_freecam==true
+        if cur~=_prevFC then
+            _prevFC=cur
+            local cam=workspace.CurrentCamera
+            if cur then
+                _fcCamCF=cam.CFrame
+                local _,_,_,_,_,_,_,_,_,_,_,_ = _fcCamCF:GetComponents()
+                -- extract yaw/pitch from current camera
+                local lookVec=_fcCamCF.LookVector
+                _fcYaw=math.atan2(-lookVec.X,-lookVec.Z)
+                _fcPitch=math.asin(math.clamp(lookVec.Y,-1,1))
+                cam.CameraType=Enum.CameraType.Scriptable
+                freezeChar(true)
+            else
+                cam.CameraType=Enum.CameraType.Custom
+                cam.CameraSubject=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                freezeChar(false)
+            end
+        end
+        if not cur then return end
+        local cam=workspace.CurrentCamera
+        -- look: joystick on mobile sends delta via GetMouseDelta
+        local delta=UserInputService:GetMouseDelta()
+        local sens=0.003
+        _fcYaw=_fcYaw-delta.X*sens
+        _fcPitch=math.clamp(_fcPitch-delta.Y*sens,-math.pi*0.49,math.pi*0.49)
+        local rot=CFrame.Angles(0,_fcYaw,0)*CFrame.Angles(_fcPitch,0,0)
+        -- move: use left joystick (thumbstick1) for WASD-equivalent
+        local move=Vector3.zero
+        local js=UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)
+        for _,s in ipairs(js) do
+            if s.KeyCode==Enum.KeyCode.Thumbstick1 then
+                move=Vector3.new(s.Position.X,0,-s.Position.Y)
+                break
+            end
+        end
+        local spd=(Flags.m_freecam_speed or 40)*dt
+        local fwd=rot.LookVector;local right=rot.RightVector
+        local newPos=_fcCamCF.Position+fwd*(move.Z*spd)+right*(move.X*spd)
+        _fcCamCF=CFrame.new(newPos)*rot
+        cam.CFrame=_fcCamCF
     end))
 end
 
