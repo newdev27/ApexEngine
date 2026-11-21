@@ -1163,7 +1163,7 @@ miscPG:AddCheckbox({ Name="No Clip",        Default=false, Flag="m_noclip" })
 miscPG:AddLabel("NoClip: walk through walls")
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="X-Ray",          Default=false, Flag="m_xray" })
-miscPG:AddColorPicker({ Name="X-Ray Color", Default=Color3.fromRGB(255, 80, 200), Flag="m_xray_col" })
+miscPG:AddSlider({   Name="X-Ray Trans",    Min=10, Max=98, Default=85, Suffix="%", Flag="m_xray_trans" })
 miscPG:AddSeparator()
 miscPG:AddCheckbox({ Name="Zoom",           Default=false, Flag="m_zoom" })
 miscPG:AddKeybind({  Name="Zoom Key",       Default=Enum.KeyCode.Z, Flag="m_zoom_key" })
@@ -2450,6 +2450,35 @@ do
     local _origCamType = nil
     local _origCamSubj = nil
 
+    local _fcBV, _fcBG = nil, nil
+    local function freezeChar(on)
+        local char = LocalPlayer.Character; if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        local hum  = char:FindFirstChildOfClass("Humanoid")
+        if not root then return end
+        if on then
+            if hum then hum.PlatformStand = true end
+            if not _fcBV then
+                _fcBV = Instance.new("BodyVelocity")
+                _fcBV.Velocity = Vector3.zero
+                _fcBV.MaxForce = Vector3.new(1e5,1e5,1e5)
+                _fcBV.P = 1e4
+                _fcBV.Parent = root
+            end
+            if not _fcBG then
+                _fcBG = Instance.new("BodyGyro")
+                _fcBG.CFrame = root.CFrame
+                _fcBG.MaxTorque = Vector3.new(1e5,1e5,1e5)
+                _fcBG.P = 1e4
+                _fcBG.Parent = root
+            end
+        else
+            if hum then hum.PlatformStand = false end
+            if _fcBV then _fcBV:Destroy(); _fcBV = nil end
+            if _fcBG then _fcBG:Destroy(); _fcBG = nil end
+        end
+    end
+
     local function enableFreeCam()
         if _fcActive then return end
         _fcActive = true
@@ -2462,6 +2491,7 @@ do
         _fcYaw   = ry
         _fcPitch = rx
         Camera.CameraType = Enum.CameraType.Scriptable
+        freezeChar(true)
         -- Lock mouse
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
         -- Mouse delta -> yaw/pitch
@@ -2504,6 +2534,7 @@ do
         if _fcConn      then _fcConn:Disconnect();      _fcConn      = nil end
         if _fcInputConn then _fcInputConn:Disconnect(); _fcInputConn = nil end
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        freezeChar(false)
         Camera = workspace.CurrentCamera
         Camera.CameraType    = _origCamType or Enum.CameraType.Custom
         Camera.CameraSubject = _origCamSubj
@@ -2559,7 +2590,7 @@ do
                 if _xrayParts[v] == nil then
                     _xrayParts[v] = v.LocalTransparencyModifier
                 end
-                v.LocalTransparencyModifier = 0.95
+                v.LocalTransparencyModifier = (ApexEngine.Flags["m_xray_trans"] or 85) / 100
             end
         end
     end
