@@ -66,7 +66,9 @@ end
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
     sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100, sa_maxdist=300,
-    no_recoil=true, no_spread=true, no_bullet_drop=true,
+    no_recoil=true, no_spread=true,
+    sa_bulletspeed=2000,
+    rapid_fire_mult=3,
     always_headshot=false, rapid_fire=false,
     ab_enabled=false,
     ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true, ab_maxdist=300,
@@ -89,6 +91,7 @@ local Flags = {
     crosshair_enabled=true, crosshair_col=Color3.new(1,1,1),
     crosshair_gap=4, crosshair_size=8, crosshair_thick=1,
     _fire_held=false,
+    _crouch_held=false,
     tc_enabled=true,
 }
 
@@ -690,7 +693,6 @@ makeToggle("Silent Aim",       "sa_enabled")
 makeToggle("Always Headshot",  "always_headshot")
 makeToggle("No Recoil",        "no_recoil")
 makeToggle("No Spread",        "no_spread")
-makeToggle("No Bullet Drop",   "no_bullet_drop")
 makeToggle("Rapid Fire",       "rapid_fire")
 makeToggle("Aimbot Lock",      "ab_enabled")
 do
@@ -760,7 +762,10 @@ Tween(tabBtns["Visual"],0,{BackgroundTransparency=0})
 task.spawn(function()
     local pg=LocalPlayer:WaitForChild("PlayerGui",30)
     if not pg then return end
+    local _hookedGuis={}
     local function hookControls(gui)
+        if _hookedGuis[gui] then return end
+        _hookedGuis[gui]=true
         local function findBtn(root,name)
             for _,d in ipairs(root:GetDescendants()) do
                 if (d:IsA("TextButton") or d:IsA("ImageButton") or d:IsA("Frame"))
@@ -768,7 +773,7 @@ task.spawn(function()
             end
         end
         local fireBtn=findBtn(gui,"Fire")
-        local crouchBtn=findBtn(gui,"Crouch")
+        local crouchBtn=findBtn(gui,"Crouch") or findBtn(gui,"Sprint") or findBtn(gui,"Run")
         if fireBtn then
             fireBtn.InputBegan:Connect(function(i)
                 if i.UserInputType==Enum.UserInputType.Touch then Flags._fire_held=true end
@@ -779,14 +784,10 @@ task.spawn(function()
         end
         if crouchBtn then
             crouchBtn.InputBegan:Connect(function(i)
-                if i.UserInputType==Enum.UserInputType.Touch then
-                    Flags.m_omnisprint=true
-                end
+                if i.UserInputType==Enum.UserInputType.Touch then Flags._crouch_held=true end
             end)
             crouchBtn.InputEnded:Connect(function(i)
-                if i.UserInputType==Enum.UserInputType.Touch then
-                    Flags.m_omnisprint=false
-                end
+                if i.UserInputType==Enum.UserInputType.Touch then Flags._crouch_held=false end
             end)
         end
     end
@@ -798,8 +799,18 @@ task.spawn(function()
         end
     end
     if not tryFind() then
-        pg.ChildAdded:Connect(function(c) task.defer(function() hookControls(c) end) end)
+        pg.ChildAdded:Connect(function(c)
+            task.defer(function() hookControls(c) end)
+        end)
     end
+    -- re-hook on respawn in case GUI gets recreated
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(2)
+        for _,n in ipairs(names) do
+            local g=pg:FindFirstChild(n,true)
+            if g then hookControls(g) end
+        end
+    end)
 end)
 
 -- ══════════════════════════════════════════════════════════
@@ -813,12 +824,12 @@ local function getR6Part(char,name)
         or char:FindFirstChild("HumanoidRootPart")
 end
 
--- cache enemies list, refresh every frame for accurate positions
+-- cache enemies list, refresh once per frame
 local _enemyCache={}
 local _enemyCacheTick=0
 local function getEnemies()
     local now=os.clock()
-    if now-_enemyCacheTick < 0 then return _enemyCache end
+    if now==_enemyCacheTick then return _enemyCache end
     _enemyCacheTick=now
     local list={}
     local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
@@ -834,6 +845,14 @@ local function getEnemies()
     end
     _enemyCache=list
     return list
+end
+
+local function predictPos(partPos, vel, camPos)
+    local bulletSpeed = Flags.sa_bulletspeed or 2000
+    local dist = (partPos - camPos).Magnitude
+    local travelTime = dist / bulletSpeed
+    local pingOffset = math.min(LocalPlayer:GetNetworkPing(), 0.15)
+    return partPos + vel * (travelTime + pingOffset)
 end
 
 local function screenDist(worldPos)
@@ -889,6 +908,7 @@ task.spawn(function()
 end)
 
 local _hooked=false
+local _rapidFireActive=false
 track(RunService.Heartbeat:Connect(function()
     if _hooked or not GunFire or not hookfunction then return end
     _hooked=true
@@ -896,79 +916,92 @@ track(RunService.Heartbeat:Connect(function()
     hookfunction(orig,newcclosure(function(self,...)
         local args={...}
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
-
-        local SA_MAX_DIST = Flags.sa_maxdist or 300  -- only target enemies within 300 studs
+        local cam=workspace.CurrentCamera
 
         -- Aimbot headshot guarantee: when ab_enabled/fire_held, always redirect to head
         if (Flags.ab_enabled or Flags._fire_held) and not Flags.sa_enabled then
             local target=getClosest("Head",math.huge,Flags.ab_maxdist or 300)
             if target then
-                local head=target.char:FindFirstChild("Head")
-                if head then
-                    local vel=target.root.AssemblyLinearVelocity
-                    local dist=(head.Position-origin).Magnitude
-                    local ping=math.min(LocalPlayer:GetNetworkPing(),0.15)
-                    local aimPos=head.Position+vel*(dist/660+ping)
-                    if dist <= 80 then args[1]=aimPos end  -- muzzle teleport only close range
-                    args[3]=(aimPos-origin).Unit
-                end
-            end
-        end
-
-        -- Always Headshot: redirect to Head regardless of sa_part
-        if Flags.always_headshot then
-            local target=getClosest("Head",math.huge,SA_MAX_DIST)
-            if target then
-                local head=target.char:FindFirstChild("Head")
-                if head then
-                    args[1]=head.Position
-                    args[3]=(head.Position-origin).Unit
-                end
-            end
-        end
-
-        -- Silent Aim: always active, capped to SA_MAX_DIST
-        if Flags.sa_enabled and math.random(100)<=(Flags.sa_hitchance or 100) then
-            local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
-            if target then
-                local part=getR6Part(target.char,Flags.sa_part or "Head")
+                local part=getR6Part(target.char,Flags.ab_part or "Head")
                 if part then
-                    local vel=target.root.AssemblyLinearVelocity
+                    local aimPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,origin)
                     local dist=(part.Position-origin).Magnitude
-                    local ping=math.min(LocalPlayer:GetNetworkPing(),0.15)
-                    local aimPos=part.Position+vel*(dist/660+ping)
-                    if dist <= 80 then args[1]=aimPos end  -- muzzle teleport only close range
+                    if dist<=80 then args[1]=aimPos end
                     args[3]=(aimPos-origin).Unit
                 end
             end
         end
 
-        -- No Bullet Drop: straight-line to predicted head position
-        -- only runs if SA is NOT active (SA already handles direction)
-        if Flags.no_bullet_drop and not Flags.sa_enabled then
-            local target=getClosest(Flags.sa_part or "Head",math.huge,SA_MAX_DIST)
-            if target then
-                local part=getR6Part(target.char,Flags.sa_part or "Head")
-                if part then
-                    local vel=target.root.AssemblyLinearVelocity
-                    local dist=(part.Position-origin).Magnitude
-                    local ping=math.min(LocalPlayer:GetNetworkPing(),0.15)
-                    local aimPos=part.Position+vel*(dist/660+ping)
-                    if dist <= 80 then args[1]=aimPos end  -- muzzle teleport only close range
-                    args[3]=(aimPos-origin).Unit
+        -- Always Headshot: closest on-screen head
+        if Flags.always_headshot and not _rapidFireActive then
+            local bestDist,bestHead=math.huge,nil
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p~=LocalPlayer and p.Character then
+                    local myClanId=Flags.tc_enabled and LocalPlayer:GetAttribute("ClanId")
+                    if myClanId~=nil and p:GetAttribute("ClanId")==myClanId then continue end
+                    local hum=p.Character:FindFirstChildOfClass("Humanoid")
+                    local head=p.Character:FindFirstChild("Head")
+                    if head and hum and hum.Health>0 then
+                        local sp,onSc=cam:WorldToViewportPoint(head.Position)
+                        if onSc and sp.Z>0 then
+                            local vp=cam.ViewportSize
+                            local d=(Vector2.new(sp.X,sp.Y)-Vector2.new(vp.X*0.5,vp.Y*0.5)).Magnitude
+                            if d<bestDist then bestDist=d;bestHead=head end
+                        end
+                    end
+                end
+            end
+            if bestHead then
+                local dir=(bestHead.Position-origin)
+                if dir.Magnitude>0.01 then args[3]=dir.Unit end
+                if Flags.rapid_fire and not _rapidFireActive then
+                    local result=orig(self,table.unpack(args))
+                    _rapidFireActive=true
+                    task.spawn(function()
+                        local extra=math.max(1,math.floor(Flags.rapid_fire_mult or 3)-1)
+                        for _=1,extra do task.wait();task.spawn(function() orig(self,table.unpack(args)) end) end
+                        _rapidFireActive=false
+                    end)
+                    return result
+                end
+                return orig(self,table.unpack(args))
+            end
+        end
+
+        -- Silent Aim
+        if Flags.sa_enabled then
+            local keyHeld=(not Flags.sa_key) or UserInputService:IsKeyDown(Flags.sa_key)
+            if keyHeld and math.random(100)<=(Flags.sa_hitchance or 100) then
+                local target=getClosest(Flags.sa_part or "Head",Flags.sa_fov or 120,Flags.sa_maxdist or 300)
+                if target then
+                    local part=getR6Part(target.char,Flags.sa_part or "Head")
+                    if part and typeof(origin)=="Vector3" then
+                        local aimPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,origin)
+                        local dist=(part.Position-origin).Magnitude
+                        if dist<=80 then args[1]=aimPos end
+                        args[3]=(aimPos-origin).Unit
+                    end
                 end
             end
         end
 
-        -- No Spread: only apply if SA and no_bullet_drop are both off
-        if Flags.no_spread and not Flags.sa_enabled and not Flags.no_bullet_drop and typeof(args[3])=="Vector3" then
-            args[3]=workspace.CurrentCamera.CFrame.LookVector
+        -- No Spread
+        if Flags.no_spread and not _rapidFireActive then
+            if #args>=3 and typeof(args[3])=="Vector3" then
+                args[3]=cam.CFrame.LookVector
+            end
         end
 
-        -- Rapid Fire: fire extra shots immediately
-        if Flags.rapid_fire then
-            task.defer(function() pcall(orig,self,table.unpack(args)) end)
-            task.defer(function() pcall(orig,self,table.unpack(args)) end)
+        -- Rapid Fire standalone
+        if Flags.rapid_fire and not _rapidFireActive then
+            local result=orig(self,table.unpack(args))
+            _rapidFireActive=true
+            task.spawn(function()
+                local extra=math.max(1,math.floor(Flags.rapid_fire_mult or 3)-1)
+                for _=1,extra do task.wait();task.spawn(function() orig(self,table.unpack(args)) end) end
+                _rapidFireActive=false
+            end)
+            return result
         end
 
         return orig(self,table.unpack(args))
@@ -997,15 +1030,12 @@ track(RunService.RenderStepped:Connect(function()
     local part=getR6Part(target.char,partName)
     if not part then return end
     local targetPos=part.Position
-    if Flags.ab_predict then
-        local vel=target.root.AssemblyLinearVelocity
-        local dist=(targetPos-workspace.CurrentCamera.CFrame.Position).Magnitude
-        local ping=math.min(LocalPlayer:GetNetworkPing(),0.15)
-        targetPos=targetPos+vel*(dist/660+ping)
-    end
     local cam=workspace.CurrentCamera
-    local _,onScreen=cam:WorldToViewportPoint(targetPos)
-    if not onScreen then return end
+    if Flags.ab_predict then
+        targetPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,cam.CFrame.Position)
+    end
+    local sp,onScreen=cam:WorldToViewportPoint(targetPos)
+    if not onScreen or sp.Z<=0 then return end
     local smooth=math.clamp((Flags.ab_smooth or 8)/50,0.01,1)
     local w=cam.CFrame
     cam.CFrame=w:Lerp(CFrame.lookAt(w.Position,targetPos),math.clamp(1-smooth,0.01,0.99))
@@ -1348,7 +1378,8 @@ end
 do
     local origWS=nil
     track(RunService.Heartbeat:Connect(function()
-        if not Flags.m_omnisprint then
+        local active=Flags.m_omnisprint or Flags._crouch_held
+        if not active then
             if origWS then
                 local char=LocalPlayer.Character
                 local hum=char and char:FindFirstChildOfClass("Humanoid")
@@ -1538,14 +1569,21 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════
--- FREE CAM  (mobile joystick look via GetMouseDelta, WASD-free)
+-- FREE CAM  (mobile two-finger touch: left=move, right=look)
 -- Character is frozen in place while active
 -- ══════════════════════════════════════════════════════════
 do
     local _prevFC=false
     local _fcCamCF=nil
     local _fcYaw,_fcPitch=0,0
-    local _bv,_bg=nil,nil  -- BodyVelocity + BodyGyro to freeze char
+    local _bv,_bg=nil,nil
+
+    -- touch state: left half = move joystick, right half = look drag
+    local _moveStart=nil   -- Vector2 touch origin for move
+    local _moveCur=nil     -- Vector2 current touch pos for move
+    local _lookPrev=nil    -- Vector2 previous look touch pos
+    local _moveTouchId=nil
+    local _lookTouchId=nil
 
     local function freezeChar(on)
         local char=LocalPlayer.Character;if not char then return end
@@ -1571,6 +1609,42 @@ do
         end
     end
 
+    track(UserInputService.TouchStarted:Connect(function(touch)
+        if not Flags.m_freecam then return end
+        local vps=workspace.CurrentCamera.ViewportSize
+        local pos=Vector2.new(touch.Position.X,touch.Position.Y)
+        if pos.X < vps.X*0.5 then
+            -- left half: move joystick
+            _moveTouchId=touch
+            _moveStart=pos;_moveCur=pos
+        else
+            -- right half: look drag
+            _lookTouchId=touch
+            _lookPrev=pos
+        end
+    end))
+
+    track(UserInputService.TouchMoved:Connect(function(touch)
+        if not Flags.m_freecam then return end
+        local pos=Vector2.new(touch.Position.X,touch.Position.Y)
+        if touch==_moveTouchId then
+            _moveCur=pos
+        elseif touch==_lookTouchId then
+            if _lookPrev then
+                local delta=pos-_lookPrev
+                local sens=0.006
+                _fcYaw=_fcYaw-delta.X*sens
+                _fcPitch=math.clamp(_fcPitch-delta.Y*sens,-math.pi*0.49,math.pi*0.49)
+            end
+            _lookPrev=pos
+        end
+    end))
+
+    track(UserInputService.TouchEnded:Connect(function(touch)
+        if touch==_moveTouchId then _moveTouchId=nil;_moveStart=nil;_moveCur=nil end
+        if touch==_lookTouchId then _lookTouchId=nil;_lookPrev=nil end
+    end))
+
     track(RunService.RenderStepped:Connect(function(dt)
         local cur=Flags.m_freecam==true
         if cur~=_prevFC then
@@ -1578,8 +1652,6 @@ do
             local cam=workspace.CurrentCamera
             if cur then
                 _fcCamCF=cam.CFrame
-                local _,_,_,_,_,_,_,_,_,_,_,_ = _fcCamCF:GetComponents()
-                -- extract yaw/pitch from current camera
                 local lookVec=_fcCamCF.LookVector
                 _fcYaw=math.atan2(-lookVec.X,-lookVec.Z)
                 _fcPitch=math.asin(math.clamp(lookVec.Y,-1,1))
@@ -1589,28 +1661,25 @@ do
                 cam.CameraType=Enum.CameraType.Custom
                 cam.CameraSubject=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                 freezeChar(false)
+                _moveStart=nil;_moveCur=nil;_lookPrev=nil
+                _moveTouchId=nil;_lookTouchId=nil
             end
         end
         if not cur then return end
         local cam=workspace.CurrentCamera
-        -- look: joystick on mobile sends delta via GetMouseDelta
-        local delta=UserInputService:GetMouseDelta()
-        local sens=0.003
-        _fcYaw=_fcYaw-delta.X*sens
-        _fcPitch=math.clamp(_fcPitch-delta.Y*sens,-math.pi*0.49,math.pi*0.49)
         local rot=CFrame.Angles(0,_fcYaw,0)*CFrame.Angles(_fcPitch,0,0)
-        -- move: use left joystick (thumbstick1) for WASD-equivalent
+        -- movement from left-half drag offset
         local move=Vector3.zero
-        local js=UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)
-        for _,s in ipairs(js) do
-            if s.KeyCode==Enum.KeyCode.Thumbstick1 then
-                move=Vector3.new(s.Position.X,0,-s.Position.Y)
-                break
-            end
+        if _moveStart and _moveCur then
+            local d=_moveCur-_moveStart
+            local deadzone=10
+            local mx=math.abs(d.X)>deadzone and d.X/100 or 0
+            local my=math.abs(d.Y)>deadzone and d.Y/100 or 0
+            move=Vector3.new(math.clamp(mx,-1,1),0,math.clamp(my,-1,1))
         end
         local spd=(Flags.m_freecam_speed or 40)*dt
         local fwd=rot.LookVector;local right=rot.RightVector
-        local newPos=_fcCamCF.Position+fwd*(move.Z*spd)+right*(move.X*spd)
+        local newPos=_fcCamCF.Position+fwd*(-move.Z*spd)+right*(move.X*spd)
         _fcCamCF=CFrame.new(newPos)*rot
         cam.CFrame=_fcCamCF
     end))
