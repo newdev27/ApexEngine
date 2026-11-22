@@ -3033,7 +3033,8 @@ do
     local _origWalkSpeed = nil
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        if not flags["m_omnisprint"] then
+        local active = flags["m_omnisprint"] or flags["_crouch_held"]
+        if not active then
             if _origWalkSpeed then
                 local char = LocalPlayer.Character
                 local hum  = char and char:FindFirstChildOfClass("Humanoid")
@@ -3046,11 +3047,7 @@ do
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return end
         if not _origWalkSpeed then _origWalkSpeed = hum.WalkSpeed end
-        if hum.MoveDirection.Magnitude > 0.05 then
-            hum.WalkSpeed = 16 + (flags["m_omnisprint_bonus"] or 0)
-        else
-            hum.WalkSpeed = _origWalkSpeed
-        end
+        hum.WalkSpeed = 16 + (flags["m_omnisprint_bonus"] or 0)
     end))
 end
 
