@@ -1,5 +1,24 @@
-if getgenv().apexengine_mobile_loaded then
-    while task.wait(99999) do end
+-- Re-execution safe: destroy any prior instance from a previous run so
+-- re-running the script reloads the UI cleanly instead of hanging.
+-- (Old builds used `while task.wait(99999) do end` here, which is why
+--  nothing showed up when you re-ran the script.)
+do
+    local _toClean = {"ApexMobileUI","ApexMobileKey","ApexMobileToast"}
+    local _cg = game:GetService("CoreGui")
+    for _,n in ipairs(_toClean) do
+        local old = _cg:FindFirstChild(n)
+        if old then pcall(function() old:Destroy() end) end
+    end
+    local _lp = game:GetService("Players").LocalPlayer
+    if _lp then
+        local _pgui = _lp:FindFirstChildOfClass("PlayerGui")
+        if _pgui then
+            for _,n in ipairs(_toClean) do
+                local old = _pgui:FindFirstChild(n)
+                if old then pcall(function() old:Destroy() end) end
+            end
+        end
+    end
 end
 getgenv().apexengine_mobile_loaded = true
 
@@ -169,13 +188,21 @@ end
 -- ══════════════════════════════════════════════════════════
 -- KEY GATE
 -- ══════════════════════════════════════════════════════════
-local authed = false
+-- KEY GATE BYPASS (testing mode)
+-- The previous build blocked here forever: validateKey() fetches keys.json
+-- from raw.githubusercontent.com, and if that fetch fails (network blocked,
+-- repo removed, executor restricts HttpGet) OR no valid key is present,
+-- `repeat task.wait(0.1) until done` loops forever and the APEX button +
+-- settings panel below never get created. That is why the UI never loaded.
+-- Set USE_KEY_GATE = true to re-enable once your key server is online.
+local USE_KEY_GATE = false
+local authed = true
 do
     local saved = getSavedKey()
-    if saved then local ok=validateKey(saved); authed=ok end
+    if saved and USE_KEY_GATE then local ok=validateKey(saved); authed=ok end
 end
 
-if not authed then
+if USE_KEY_GATE and not authed then
     local done=false
     local kg=New("ScreenGui",{Name="ApexMobileKey",ResetOnSpawn=false,
         IgnoreGuiInset=true,DisplayOrder=999,Parent=GetGui()})
