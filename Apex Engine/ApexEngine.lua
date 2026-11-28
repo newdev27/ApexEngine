@@ -3290,28 +3290,43 @@ do
 end
 
 -- ============================================================
--- OMNI SPRINT RESTORE
+-- OMNI SPRINT
 -- ============================================================
 do
-    local _origWalkSpeed = nil
+    -- Uses the game's own ClientSettingsConfig EmitVirtualAction("Sprint") so
+    -- applyMovementSpeed() in MovementClient sees t_1.Shift = true.
+    -- This works for both PC and mobile since resetKeys() reads IsActionDown("Sprint").
+    local RS = game:GetService("ReplicatedStorage")
+    local _csConfig = nil
+    pcall(function() _csConfig = require(RS:WaitForChild("ClientSettingsConfig", 5)) end)
+
+    local _sprintActive = false
+
+    local function setSprintVirtual(on)
+        if _csConfig and _csConfig.EmitVirtualAction then
+            local state = on and Enum.UserInputState.Begin or Enum.UserInputState.End
+            pcall(_csConfig.EmitVirtualAction, "Sprint", state, nil)
+        end
+    end
+
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        local active = flags["m_omnisprint"] or flags["_crouch_held"]
-        if not active then
-            if _origWalkSpeed then
-                local char = LocalPlayer.Character
-                local hum  = char and char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.WalkSpeed = _origWalkSpeed end
-                _origWalkSpeed = nil
-            end
-            return
-        end
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then return end
-        if not _origWalkSpeed then _origWalkSpeed = hum.WalkSpeed end
-        hum.WalkSpeed = 16 + (flags["m_omnisprint_bonus"] or 0)
+        local want = flags["m_omnisprint"] == true
+        if want == _sprintActive then return end
+        _sprintActive = want
+        setSprintVirtual(want)
     end))
+
+    -- Re-emit on character respawn in case the virtual state resets
+    LocalPlayer.CharacterAdded:Connect(function()
+        if _sprintActive then
+            task.delay(0.5, function()
+                if ApexEngine.Flags["m_omnisprint"] then
+                    setSprintVirtual(true)
+                end
+            end)
+        end
+    end)
 end
 
 -- ============================================================
@@ -3501,9 +3516,36 @@ do
         return parts
     end
 
+    local VM_MAT_MAP = {
+        ["Forcefield"] = Enum.Material.ForceField,
+        ["Neon"] = Enum.Material.Neon,
+        ["Glass"] = Enum.Material.Glass,
+        ["SmoothPlastic"] = Enum.Material.SmoothPlastic,
+        ["Metal"] = Enum.Material.Metal,
+        ["DiamondPlate"] = Enum.Material.DiamondPlate,
+        ["Granite"] = Enum.Material.Granite,
+        ["Marble"] = Enum.Material.Marble,
+        ["Brick"] = Enum.Material.Brick,
+        ["Wood"] = Enum.Material.Wood,
+        ["WoodPlanks"] = Enum.Material.WoodPlanks,
+        ["Cobblestone"] = Enum.Material.Cobblestone,
+        ["CorrodedMetal"] = Enum.Material.CorrodedMetal,
+        ["Ice"] = Enum.Material.Ice,
+        ["Fabric"] = Enum.Material.Fabric,
+        ["Sand"] = Enum.Material.Sand,
+        ["Sandstone"] = Enum.Material.Sandstone,
+        ["Slate"] = Enum.Material.Slate,
+        ["Concrete"] = Enum.Material.Concrete,
+        ["Foil"] = Enum.Material.Foil,
+        ["Pebble"] = Enum.Material.Pebble,
+        ["Rock"] = Enum.Material.Rock,
+        ["Grass"] = Enum.Material.Grass,
+        ["LeafyGrass"] = Enum.Material.LeafyGrass,
+    }
+
     local function applyVM()
         local flags = ApexEngine.Flags
-        local mat = Enum.Material[flags["vm_material"] or "Forcefield"]
+        local mat = VM_MAT_MAP[flags["vm_material"] or "Forcefield"] or Enum.Material.ForceField
         local col = VM_COLORS[flags["vm_color"] or "Cyan"] or Color3.fromRGB(0,255,255)
         local trans = (flags["vm_transparency"] or 0) / 100
         for _, name in ipairs(VM_NAMES) do
