@@ -3315,40 +3315,16 @@ end
 -- OMNI SPRINT
 -- ============================================================
 do
-    -- Uses the game's own ClientSettingsConfig EmitVirtualAction("Sprint") so
-    -- applyMovementSpeed() in MovementClient sees t_1.Shift = true.
-    -- This works for both PC and mobile since resetKeys() reads IsActionDown("Sprint").
-    local RS = game:GetService("ReplicatedStorage")
-    local _csConfig = nil
-    pcall(function() _csConfig = require(RS:WaitForChild("ClientSettingsConfig", 5)) end)
-
-    local _sprintActive = false
-
-    local function setSprintVirtual(on)
-        if _csConfig and _csConfig.EmitVirtualAction then
-            local state = on and Enum.UserInputState.Begin or Enum.UserInputState.End
-            pcall(_csConfig.EmitVirtualAction, "Sprint", state, nil)
-        end
-    end
-
+    -- Directly set WalkSpeed every Heartbeat while enabled.
+    -- The bonus slider adds extra speed on top of the game's sprint speed (20).
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        local want = flags["m_omnisprint"] == true
-        if want == _sprintActive then return end
-        _sprintActive = want
-        setSprintVirtual(want)
+        if not flags["m_omnisprint"] then return end
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+        hum.WalkSpeed = 20 + (flags["m_omnisprint_bonus"] or 0)
     end))
-
-    -- Re-emit on character respawn in case the virtual state resets
-    LocalPlayer.CharacterAdded:Connect(function()
-        if _sprintActive then
-            task.delay(0.5, function()
-                if ApexEngine.Flags["m_omnisprint"] then
-                    setSprintVirtual(true)
-                end
-            end)
-        end
-    end)
 end
 
 -- ============================================================
@@ -3615,6 +3591,13 @@ do
             applyVM()
         end
     end))
+    -- On respawn the VM models get fresh parts; wipe saved originals so applyVM re-saves them
+    LocalPlayer.CharacterAdded:Connect(function()
+        table.clear(_vmOrig)
+        if ApexEngine.Flags["vm_enabled"] then
+            task.defer(applyVM)
+        end
+    end)
 end
 
 return ApexEngine
