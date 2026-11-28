@@ -962,18 +962,11 @@ local CombatPage = CombatTab:AddSubtab("Main")
 
 -- Left: Aim Assistance
 local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
-aimG:AddCheckbox({ Name="Silent Aim",    Default=false, Flag="sa_enabled" })
-aimG:AddKeybind({  Name="SA Hold Key",   Default=nil,   Flag="sa_key" })
-aimG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="sa_part" })
-aimG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="sa_fov" })
-aimG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=1000,Suffix="m",Flag="sa_maxdist" })
-aimG:AddSlider({   Name="Bullet Speed",  Min=100,Max=5000,Default=2000,Suffix="s/s",Flag="sa_bulletspeed" })
-aimG:AddSlider({   Name="Hitchance",     Min=1, Max=100, Default=100, Suffix="%", Flag="sa_hitchance" })
-aimG:AddSeparator()
 aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
 aimG:AddKeybind({  Name="Triggerbot Key",Default=Enum.KeyCode.CapsLock, Flag="tb_key" })
 aimG:AddSlider({   Name="Trigger FOV",  Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
 aimG:AddSlider({   Name="Reaction Delay",Min=0,Max=500,Default=50,Suffix="ms",Flag="tb_delay" })
+aimG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=850,Suffix="m",Flag="tb_maxdist" })
 
 -- Left: Aimbot
 local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
@@ -984,10 +977,7 @@ abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Fl
 abG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" })
 abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
 abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
-abG:AddSeparator()
-abG:AddCheckbox({ Name="Camlock",       Default=false, Flag="ab_camlock" })
-abG:AddKeybind({  Name="Camlock Key",   Default=Enum.KeyCode.F, Flag="ab_camlock_key" })
-abG:AddSlider({   Name="Camlock Smooth",Min=1,Max=50,Default=10,Flag="ab_camlock_smooth" })
+
 
 -- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
@@ -1000,18 +990,9 @@ miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Always Headshot", Default=false, Flag="always_headshot" })
 miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet" })
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
-miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
-miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Fire Rate Changer", Default=false, Flag="fr_enabled" })
 miscG:AddSlider({   Name="Fire Rate",        Min=250, Max=1500, Default=600, Suffix=" RPM", Flag="fr_rpm" })
 
--- Right: Snapline
-local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
-snapG:AddCheckbox({ Name="Enabled",       Default=false, Flag="snap_enabled" })
-snapG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,200,0), Flag="snap_col" })
-snapG:AddDropdown({ Name="Origin",        Items={"Bottom","Center"}, Default="Bottom", Flag="snap_origin" })
-snapG:AddSlider({   Name="Thickness",     Min=1,Max=5,Default=1,Flag="snap_thick" })
 
 
 -- ============================================================
@@ -1040,10 +1021,6 @@ tcG:AddCheckbox({ Name="Team Check", Default=true, Flag="tc_enabled" })
 tcG:AddLabel("Skip clan teammates in all features")
 
 local espR = VisualPage:AddGroup("Extra", Icons.ghost, "Right", 340)
-espR:AddCheckbox({ Name="Tracers",        Default=false, Flag="esp_tracer" })
-espR:AddColorPicker({ Name="Tracer Color",Default=Color3.fromRGB(0,180,255),   Flag="esp_tracer_col" })
-espR:AddDropdown({ Name="Tracer Origin",  Items={"Bottom","Center","Mouse"},   Default="Bottom", Flag="esp_tracer_origin" })
-espR:AddSeparator()
 espR:AddCheckbox({ Name="Highlight",      Default=false, Flag="esp_chams" })
 espR:AddColorPicker({ Name="Fill Color",  Default=Color3.fromRGB(255,60,90),   Flag="esp_fill_col" })
 espR:AddSlider({   Name="Fill Opacity",   Min=0,Max=100,Default=50,Suffix="%", Flag="esp_fill_opacity" })
@@ -1561,11 +1538,11 @@ do
     local GunFire = nil
 
     -- ── Shared helpers ────────────────────────────────────────
-    -- Enemy list cache (refreshed every frame for accurate positions)
+    -- Enemy list cache (refreshed once per render step)
     local _enemyCache, _enemyCacheTick = {}, -1
     local function getEnemies()
         local now = os.clock()
-        if now == _enemyCacheTick then return _enemyCache end
+        if math.abs(now - _enemyCacheTick) < 0.001 then return _enemyCache end
         _enemyCacheTick = now
         local list = {}
         local myClanId = ApexEngine.Flags["tc_enabled"] and LocalPlayer:GetAttribute("ClanId")
@@ -1584,8 +1561,16 @@ do
     end
 
     local function getAimPart(char, partName)
-        return char:FindFirstChild(partName) or char:FindFirstChild("HumanoidRootPart")
+        -- Never fall back silently — return nil if the exact part isn't found
+        -- so callers can skip rather than aim at the wrong body part
+        return char:FindFirstChild(partName)
     end
+
+    -- Locked aim target: set by aimbot RenderStepped, read by GunFire hook
+    -- This guarantees both systems aim at the exact same predicted position
+    local _lockedTarget   = nil  -- enemy entry
+    local _lockedAimPos   = nil  -- predicted world position (Vector3)
+    local _lockedPartName = nil  -- part name used
 
     local function screenDist(worldPos)
         local cam = workspace.CurrentCamera
@@ -1615,18 +1600,17 @@ do
         if not myRoot then return nil end
         for _, e in ipairs(getEnemies()) do
             local part = getAimPart(e.char, partName or "Head")
-            if part then
-                local worldDist = (part.Position - myRoot.Position).Magnitude
-                if maxWorldDist and worldDist > maxWorldDist then continue end
-                if fovPx and fovPx < math.huge then
-                    local sd = screenDist(part.Position)
-                    if sd > fovPx then continue end
-                end
-                if isEnemyVisible(e) then
-                    if worldDist < bestVisibleDist then bestVisibleDist = worldDist; bestVisible = e end
-                else
-                    if worldDist < bestAnyDist then bestAnyDist = worldDist; bestAny = e end
-                end
+            if not part then continue end  -- skip if exact part missing, never fall back
+            local worldDist = (part.Position - myRoot.Position).Magnitude
+            if maxWorldDist and worldDist > maxWorldDist then continue end
+            if fovPx and fovPx < math.huge then
+                local sd = screenDist(part.Position)
+                if sd > fovPx then continue end
+            end
+            if isEnemyVisible(e) then
+                if worldDist < bestVisibleDist then bestVisibleDist = worldDist; bestVisible = e end
+            else
+                if worldDist < bestAnyDist then bestAnyDist = worldDist; bestAny = e end
             end
         end
         return bestVisible or bestAny
@@ -1645,15 +1629,25 @@ do
         return false
     end
 
-    local function predictPos(partPos, vel, camPos)
+    -- Smoothed per-target velocity to reduce jitter from network interpolation
+    local _velSmooth = {} -- [player] = smoothed velocity
+    local function getSmoothedVel(root)
+        local p = root.Parent and Players:FindFirstChild(root.Parent.Name)
+        if not p then return root.AssemblyLinearVelocity end
+        local raw = root.AssemblyLinearVelocity
+        local prev = _velSmooth[p]
+        if not prev then _velSmooth[p] = raw; return raw end
+        local smoothed = prev:Lerp(raw, 0.35)
+        _velSmooth[p] = smoothed
+        return smoothed
+    end
+
+    local function predictPos(partPos, vel, originPos)
         local bulletSpeed = ApexEngine.Flags["sa_bulletspeed"] or 2000
-        local dist = (partPos - camPos).Magnitude
-        local ping = LocalPlayer:GetNetworkPing()
-        -- travel time: how long bullet takes to reach target
-        -- ping: one-way server delay (full RTT / 2), but clamp so close-range doesn't over-predict
+        local dist = (partPos - originPos).Magnitude
+        local ping = math.min(LocalPlayer:GetNetworkPing(), 0.12)
         local travelTime = dist / bulletSpeed
-        local pingOffset = math.min(ping, 0.15) -- cap at 150ms to avoid over-shooting slow/still targets
-        return partPos + vel * (travelTime + pingOffset)
+        return partPos + vel * (travelTime + ping)
     end
 
     -- ── FOV circle ────────────────────────────────────────────
@@ -1681,11 +1675,11 @@ do
 
     trackConnection(RunService.RenderStepped:Connect(function()
         local flags = ApexEngine.Flags
-        local showFov = (flags["sa_enabled"] or flags["ab_enabled"]) == true
+        local showFov = flags["ab_enabled"] == true
         if showFov then
             local cam = workspace.CurrentCamera
             local vp  = cam.ViewportSize
-            local fov = flags["sa_enabled"] and (flags["sa_fov"] or 80) or (flags["ab_fov"] or 80)
+            local fov = flags["ab_fov"] or 80
             fovCircle.Position = UDim2.fromOffset(vp.X/2, vp.Y/2)
             fovCircle.Size     = UDim2.fromOffset(fov*2, fov*2)
             fovCircle.Visible  = true
@@ -1777,19 +1771,15 @@ do
                 _frLastFired = now
             end
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
+            -- Use camera position for direction math (muzzle pos used for muzzle teleport only)
+            local camOrigin = workspace.CurrentCamera.CFrame.Position
 
-            -- Aimbot headshot guarantee: when aimbot key held, always redirect to head
+            -- Aimbot: consume the locked position written by RenderStepped this frame
             if flags["ab_enabled"] and isBindHeld(flags["ab_key"] or Enum.KeyCode.E) and not flags["sa_enabled"] then
-                local partName = flags["ab_part"] or "Head"
-                local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 1000)
-                if target then
-                    local part = getR6Part(target.char, partName)
-                    if part then
-                        local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
-                        local dist = (part.Position - origin).Magnitude
-                        if dist <= 80 then args[1] = aimPos end  -- muzzle teleport only close range
-                        args[3] = (aimPos - origin).Unit
-                    end
+                if _lockedAimPos then
+                    local dist = (_lockedAimPos - camOrigin).Magnitude
+                    if dist <= 80 then args[1] = _lockedAimPos end
+                    args[3] = (_lockedAimPos - camOrigin).Unit
                 end
             end
 
@@ -1816,11 +1806,10 @@ do
                 if bestHead then
                     local targetPos = bestHead.Position
                     if flags["instant_bullet"] then
-                        -- place muzzle at target so bullet has zero travel distance
                         if #args >= 1 and typeof(args[1]) == "Vector3" then args[1] = targetPos end
-                        origin = targetPos
+                        camOrigin = targetPos
                     end
-                    local dir = (targetPos - origin)
+                    local dir = (targetPos - camOrigin)
                     if dir.Magnitude > 0.01 then
                         args[3] = dir.Unit
                     end
@@ -1844,28 +1833,6 @@ do
                 end
             end
 
-            -- Silent Aim
-            if flags["sa_enabled"] then
-                local key = flags["sa_key"]
-                local keyHeld = (not key) or isBindHeld(key)
-                if keyHeld and math.random(100) <= (flags["sa_hitchance"] or 100) then
-                    local partName = flags["sa_part"] or "Head"
-                    local target = getClosestEnemy(partName, flags["sa_fov"] or 80, flags["sa_maxdist"] or 1000)
-                    if target then
-                        local part = getR6Part(target.char, partName)
-                        if part and typeof(origin) == "Vector3" then
-                            local aimPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, origin)
-                            local dist = (part.Position - origin).Magnitude
-                            if dist <= 80 then args[1] = aimPos end  -- muzzle teleport only close range
-                            args[3] = (aimPos - origin).Unit
-                            if flags["bullet_tracers"] then
-                                task.spawn(drawBulletTracer, origin, aimPos)
-                            end
-                        end
-                    end
-                end
-            end
-
             -- No Spread: force exact camera look direction (no random offset)
             if flags["no_spread"] and not _rapidFireActive then
                 if #args >= 3 and typeof(args[3]) == "Vector3" then
@@ -1878,9 +1845,9 @@ do
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
                 params.FilterDescendantsInstances = {LocalPlayer.Character}
-                local hit = workspace:Raycast(origin, args[3] * 900, params)
-                local endPos = hit and hit.Position or (origin + args[3] * 900)
-                task.spawn(drawBulletTracer, origin, endPos)
+                local hit = workspace:Raycast(camOrigin, args[3] * 900, params)
+                local endPos = hit and hit.Position or (camOrigin + args[3] * 900)
+                task.spawn(drawBulletTracer, camOrigin, endPos)
             end
 
             -- Rapid Fire standalone
@@ -1923,23 +1890,30 @@ do
     -- Aimbot
     trackConnection(RunService.RenderStepped:Connect(function(dt)
         local flags = ApexEngine.Flags
-        if not flags["ab_enabled"] then return end
-        if not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
+        -- Always clear lock at start of frame
+        _lockedTarget   = nil
+        _lockedAimPos   = nil
+        _lockedPartName = nil
+
+        if not flags["ab_enabled"] or not isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then return end
         local partName = flags["ab_part"] or "Head"
         local target = getClosestEnemy(partName, flags["ab_fov"] or 80, flags["ab_maxdist"] or 1000)
         if not target then return end
-        local part = getR6Part(target.char, partName)
+        local part = getAimPart(target.char, partName)
         if not part then return end
         local cam = workspace.CurrentCamera
-        local targetPos = part.Position
-        if flags["ab_predict"] then
-            targetPos = predictPos(part.Position, target.root.AssemblyLinearVelocity, cam.CFrame.Position)
-        end
+        local targetPos = flags["ab_predict"]
+            and predictPos(part.Position, getSmoothedVel(target.root), cam.CFrame.Position)
+            or  part.Position
         local sp, onScreen = cam:WorldToViewportPoint(targetPos)
         if not onScreen or sp.Z <= 0 then return end
         local smooth = math.clamp((flags["ab_smooth"] or 10) / 50, 0.01, 1)
         local w = cam.CFrame
         cam.CFrame = w:Lerp(CFrame.lookAt(w.Position, targetPos), math.clamp(1 - smooth, 0.01, 0.99))
+        -- Lock for this frame so the GunFire hook uses the exact same target + position
+        _lockedTarget   = target
+        _lockedAimPos   = targetPos
+        _lockedPartName = partName
     end))
 
     -- Triggerbot
@@ -1949,7 +1923,16 @@ do
         if not flags["tb_enabled"] then return end
         local delay = (flags["tb_delay"] or 50) / 1000
         if os.clock() - _tbLastFire < delay then return end
-        local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
+        -- Use aimbot's part when aimbot is active so triggerbot fires at the same target
+        local partName = (flags["ab_enabled"] and flags["ab_part"]) or "Head"
+        local fov = flags["tb_fov"] or 15
+        -- When aimbot is active and holding key, require target to be within a tighter screen dist
+        -- so triggerbot only fires once the camera is actually on the target
+        if flags["ab_enabled"] and isBindHeld(flags["ab_key"] or Enum.KeyCode.E) then
+            fov = math.min(fov, 12)
+        end
+        local tbMaxDist = flags["tb_maxdist"] or 850
+        local target = getClosestEnemy(partName, fov, tbMaxDist)
         if not target then return end
         if not isEnemyVisible(target) then return end
         _tbLastFire = os.clock()
