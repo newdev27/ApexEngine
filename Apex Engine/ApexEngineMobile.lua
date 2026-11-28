@@ -30,19 +30,21 @@ local function GetGui()
 end
 
 local T = {
-    Bg     = Color3.fromRGB(8,8,12),
-    Panel  = Color3.fromRGB(14,14,20),
-    Accent = Color3.fromRGB(76,125,255),
-    Text   = Color3.new(1,1,1),
-    Dim    = Color3.fromRGB(130,132,143),
-    On     = Color3.fromRGB(76,125,255),
-    Off    = Color3.fromRGB(40,40,55),
+    Bg     = Color3.fromRGB(11,11,14),    -- #0B0B0E Deep Obsidian
+    Panel  = Color3.fromRGB(20,20,26),    -- #14141A Dark Slate
+    Border = Color3.fromRGB(40,40,52),    -- #282834
+    Accent = Color3.fromRGB(230,57,70),   -- #E63946 Apex Crimson
+    Accent2= Color3.fromRGB(255,77,90),   -- #FF4D5A Secondary glow
+    Text   = Color3.fromRGB(241,241,245), -- #F1F1F5
+    Dim    = Color3.fromRGB(110,112,124),
+    On     = Color3.fromRGB(230,57,70),
+    Off    = Color3.fromRGB(35,22,24),
     Red    = Color3.fromRGB(255,70,70),
     Green  = Color3.fromRGB(60,220,110),
-    ABOn   = Color3.fromRGB(255,80,80),   -- aimbot button active colour
-    ABOff  = Color3.fromRGB(40,20,20),
+    ABOn   = Color3.fromRGB(230,57,70),
+    ABOff  = Color3.fromRGB(40,18,20),
     TBOn   = Color3.fromRGB(255,140,0),
-    TBOff  = Color3.fromRGB(40,30,10),
+    TBOff  = Color3.fromRGB(40,28,10),
 }
 
 local function New(cls, props, kids)
@@ -60,14 +62,18 @@ local function Tween(o,t,props)
     TweenService:Create(o,TweenInfo.new(t,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),props):Play()
 end
 
+-- ── GunFire (declared early so triggerbot can reference it) ─
+local GunFire = nil
+task.spawn(function()
+    GunFire = game:GetService("ReplicatedStorage"):WaitForChild("GunFire", 15)
+end)
+
 -- ── Flags ─────────────────────────────────────────────────
 local Flags = {
     sa_enabled=true, sa_part="Head", sa_fov=120, sa_hitchance=100, sa_maxdist=300,
     no_recoil=true, no_spread=true,
     sa_bulletspeed=2000,
-    rapid_fire_mult=3,
-    always_headshot=false, rapid_fire=false,
-    ab_enabled=false,
+    always_headshot=false,
     ab_part="Head", ab_fov=120, ab_smooth=8, ab_predict=true, ab_maxdist=300,
     esp_enabled=true, esp_box=true, esp_box_col=Color3.new(1,1,1),
     esp_name=true, esp_name_col=Color3.new(1,1,1),
@@ -75,7 +81,7 @@ local Flags = {
     esp_dist=true, esp_maxdist=1500, esp_textsize=11,
     esp_chams=false, esp_fill_col=Color3.fromRGB(255,60,90),
     esp_fill_opacity=50, esp_outline_col=Color3.new(1,1,1),
-    esp_tracer=false, esp_tracer_col=Color3.fromRGB(0,180,255),
+    w_fovchanger=false, w_customfov=70,
     wesp_harv=false, wesp_ore=false, wesp_sleepers=false,
     wesp_c4=true, wesp_c4_alert=true, wesp_rockets=true,
     wesp_maxdist=1000, wesp_turrets=false, wesp_storage=false,
@@ -92,7 +98,9 @@ local Flags = {
     tc_enabled=true,
     tb_enabled=false,
     tb_fov=60,
-    tb_delay=50,
+    tb_delay=0,
+    fr_enabled=false,
+    fr_rpm=600,
 }
 
 -- ── Key system ────────────────────────────────────────────
@@ -168,7 +176,7 @@ if not authed then
     local win=New("Frame",{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),
         Size=UDim2.fromScale(0.88,0.40),BackgroundColor3=T.Bg,BorderSizePixel=0,Parent=kg})
     Corner(14,win)
-    New("TextLabel",{Text="APEX ENGINE — KEY",BackgroundTransparency=1,
+    New("TextLabel",{Text="PROJECT APEX — KEY",BackgroundTransparency=1,
         Font=Enum.Font.GothamBlack,TextSize=sc(16),TextColor3=T.Accent,
         Size=UDim2.new(1,-20,0,sc(22)),Position=UDim2.fromOffset(10,10),Parent=win})
     local box=New("TextBox",{BackgroundColor3=T.Panel,BorderSizePixel=0,
@@ -212,87 +220,104 @@ end
 local rootGui=New("ScreenGui",{Name="ApexMobileUI",ResetOnSpawn=false,
     IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Global,Parent=GetGui()})
 
--- ══════════════════════════════════════════════════════════
--- ESP TOGGLE BUTTON  (always visible, bottom-center)
--- ══════════════════════════════════════════════════════════
-local espBtn=New("TextButton",{
-    Text="👁",
-    AnchorPoint=Vector2.new(0,0.5),
-    Position=UDim2.new(0,sc(76),0.5,0),
-    Size=UDim2.fromOffset(sc(48),sc(48)),
-    BackgroundColor3=T.On,
+-- ── Floating pill button (open/close) ─────────────────────
+-- Draggable APEX pill, bottom-left
+local openBtn=New("TextButton",{
+    Text="APEX",
+    AnchorPoint=Vector2.new(0,1),
+    Position=UDim2.new(0,sc(10),1,-sc(10)),
+    Size=UDim2.fromOffset(sc(64),sc(28)),
+    BackgroundColor3=T.Accent,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(20),
-    TextColor3=Color3.new(1,1,1),
+    TextSize=sc(11),
+    TextColor3=Color3.fromRGB(255,255,255),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(24),espBtn)
+Corner(sc(14),openBtn)
+-- thin border glow
+do
+    local s=Instance.new("UIStroke")
+    s.Color=T.Accent2; s.Thickness=1; s.Transparency=0.4
+    s.Parent=openBtn
+end
+-- make pill draggable
+do
+    local dragging,dStart,dOrigin=false,nil,nil
+    openBtn.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            dragging=true; dStart=i.Position
+            dOrigin=Vector2.new(openBtn.Position.X.Offset,openBtn.Position.Y.Offset)
+            i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not dragging then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local d=i.Position-dStart
+            openBtn.Position=UDim2.new(0,dOrigin.X+d.X,1,dOrigin.Y+d.Y)
+        end
+    end))
+end
+
+-- ── ESP quick-toggle pill ──────────────────────────────────
+local espBtn=New("TextButton",{
+    Text="ESP",
+    AnchorPoint=Vector2.new(0,1),
+    Position=UDim2.new(0,sc(82),1,-sc(10)),
+    Size=UDim2.fromOffset(sc(52),sc(28)),
+    BackgroundColor3=T.On,
+    AutoButtonColor=false,
+    Font=Enum.Font.GothamBlack,
+    TextSize=sc(11),
+    TextColor3=Color3.fromRGB(255,255,255),
+    ZIndex=20,
+    Parent=rootGui,
+})
+Corner(sc(14),espBtn)
+do local s=Instance.new("UIStroke"); s.Color=T.Accent2; s.Thickness=1; s.Transparency=0.5; s.Parent=espBtn end
 espBtn.Activated:Connect(function()
     Flags.esp_enabled=not Flags.esp_enabled
     Tween(espBtn,0.15,{BackgroundColor3=Flags.esp_enabled and T.On or T.Off})
 end)
 
--- ══════════════════════════════════════════════════════════
--- OPEN / CLOSE BUTTON  (always visible, bottom-left)
--- Tap it to show/hide the settings panel
--- ══════════════════════════════════════════════════════════
-local openBtn=New("TextButton",{
-    Text="⚡",
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,sc(10),1,-sc(10)),
-    Size=UDim2.fromOffset(sc(48),sc(48)),
-    BackgroundColor3=T.Accent,
-    AutoButtonColor=false,
-    Font=Enum.Font.GothamBlack,
-    TextSize=sc(22),
-    TextColor3=Color3.new(1,1,1),
-    ZIndex=20,
-    Parent=rootGui,
-})
-Corner(sc(24),openBtn)
-
--- ══════════════════════════════════════════════════════════
--- TRIGGERBOT BUTTON  (always visible, left side above aimbot)
--- ══════════════════════════════════════════════════════════
+-- ── Triggerbot pill ───────────────────────────────────────
 local tbBtn=New("TextButton",{
-    Text="🔫",
-    AnchorPoint=Vector2.new(0,0.5),
-    Position=UDim2.new(0,sc(10),0.5,-sc(36)),
-    Size=UDim2.fromOffset(sc(56),sc(48)),
+    Text="TB",
+    AnchorPoint=Vector2.new(0,1),
+    Position=UDim2.new(0,sc(142),1,-sc(10)),
+    Size=UDim2.fromOffset(sc(44),sc(28)),
     BackgroundColor3=T.TBOff,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(20),
-    TextColor3=Color3.new(1,1,1),
+    TextSize=sc(11),
+    TextColor3=Color3.fromRGB(255,255,255),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(10),tbBtn)
+Corner(sc(14),tbBtn)
 tbBtn.Activated:Connect(function()
     Flags.tb_enabled=not Flags.tb_enabled
     Tween(tbBtn,0.15,{BackgroundColor3=Flags.tb_enabled and T.TBOn or T.TBOff})
 end)
 
--- ══════════════════════════════════════════════════════════
--- AIMBOT BUTTON  (always visible, bottom-right)
--- Hold = aimbot active while held; tap = toggle lock-on
--- ══════════════════════════════════════════════════════════
+-- ── Aimbot hold button (right side, large touch target) ───
 local abBtn=New("TextButton",{
-    Text="🎯",
-    AnchorPoint=Vector2.new(0,0.5),
-    Position=UDim2.new(0,sc(10),0.5,0),
-    Size=UDim2.fromOffset(sc(56),sc(56)),
+    Text="AIM",
+    AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-sc(10),0.5,0),
+    Size=UDim2.fromOffset(sc(52),sc(52)),
     BackgroundColor3=T.ABOff,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(24),
-    TextColor3=Color3.new(1,1,1),
+    TextSize=sc(11),
+    TextColor3=Color3.fromRGB(255,255,255),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(28),abBtn)
+Corner(sc(26),abBtn)
+do local s=Instance.new("UIStroke"); s.Color=T.Accent; s.Thickness=1.5; s.Transparency=0.3; s.Parent=abBtn end
 
 -- Aimbot button: hold = fire_held, tap = toggle ab_enabled
 local _abHoldStart=0
@@ -322,20 +347,26 @@ end))
 -- ══════════════════════════════════════════════════════════
 -- SETTINGS PANEL  (draggable, shown/hidden by openBtn)
 -- ══════════════════════════════════════════════════════════
-local PANEL_SIZE = UDim2.fromScale(0.54, 0.62)
+local PANEL_SIZE = UDim2.fromScale(0.56, 0.64)
 local panel=New("Frame",{
     AnchorPoint=Vector2.new(0,0),
-    Position=UDim2.fromScale(0.01,0.06),
+    Position=UDim2.fromScale(0.01,0.04),
     Size=PANEL_SIZE,
     BackgroundColor3=T.Bg,
-    BackgroundTransparency=0.06,
+    BackgroundTransparency=0,
     BorderSizePixel=0,
     ClipsDescendants=true,
     ZIndex=10,
     Visible=true,
     Parent=rootGui,
 })
-Corner(12,panel)
+Corner(10,panel)
+do
+    local s=Instance.new("UIStroke")
+    s.Color=T.Border; s.Thickness=1; s.Transparency=0
+    s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
+    s.Parent=panel
+end
 
 -- open/close toggle
 local panelOpen=true
@@ -346,14 +377,14 @@ openBtn.Activated:Connect(function()
 end)
 
 -- top bar (drag handle)
-local topBar=New("Frame",{Size=UDim2.new(1,0,0,sc(32)),
+local topBar=New("Frame",{Size=UDim2.new(1,0,0,sc(34)),
     BackgroundColor3=T.Panel,BorderSizePixel=0,ZIndex=11,Parent=panel})
-Corner(12,topBar)
-New("TextLabel",{Text="⚡ APEX MOBILE",BackgroundTransparency=1,
-    Font=Enum.Font.GothamBlack,TextSize=sc(13),TextColor3=T.Accent,
-    Size=UDim2.new(1,-sc(10),1,0),Position=UDim2.fromOffset(sc(8),0),
-    ZIndex=12,Parent=topBar})
-
+Corner(10,topBar)
+New("Frame",{Size=UDim2.fromOffset(3,sc(18)),Position=UDim2.fromOffset(sc(10),sc(8)),
+    BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=13,Parent=topBar})
+New("TextLabel",{Text="PROJECT APEX",BackgroundTransparency=1,
+    Font=Enum.Font.GothamBlack,TextSize=sc(12),TextColor3=T.Accent,
+    Size=UDim2.new(0.6,-sc(10),1,0),Position=UDim2.fromOffset(sc(18),0),ZIndex=12,Parent=topBar})
 -- drag logic
 do
     local dragging,dragStart,panStart
@@ -379,7 +410,7 @@ end
 
 -- tab bar
 local TAB_NAMES={"Visual","World","Player"}
-local tabBar=New("Frame",{Size=UDim2.new(1,0,0,sc(28)),Position=UDim2.fromOffset(0,sc(32)),
+local tabBar=New("Frame",{Size=UDim2.new(1,0,0,sc(30)),Position=UDim2.fromOffset(0,sc(34)),
     BackgroundColor3=T.Panel,BorderSizePixel=0,ZIndex=11,Parent=panel})
 New("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Parent=tabBar})
 
@@ -408,15 +439,15 @@ local function makeRow()
 end
 
 local function makeSep(title)
-    local r=New("Frame",{Size=UDim2.new(1,0,0,sc(18)),BackgroundTransparency=1,
+
+    local r=New("Frame",{Size=UDim2.new(1,0,0,sc(20)),BackgroundTransparency=1,
         LayoutOrder=nO(),ZIndex=12,Parent=content})
     New("TextLabel",{Text=title or "",BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(10),TextColor3=T.Dim,Size=UDim2.fromScale(1,1),ZIndex=13,Parent=r})
+        TextSize=sc(10),TextColor3=T.Accent,Size=UDim2.fromScale(1,1),ZIndex=13,Parent=r})
     New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),
-        BackgroundColor3=T.Dim,BackgroundTransparency=0.7,BorderSizePixel=0,Parent=r})
+        BackgroundColor3=T.Accent,BackgroundTransparency=0.6,BorderSizePixel=0,Parent=r})
     if recTab then tabPages[recTab][#tabPages[recTab]+1]=r end
 end
-
 local function makeToggle(label,flagKey,defOverride)
     local state=defOverride~=nil and defOverride or (Flags[flagKey]==true)
     local row=makeRow()
@@ -455,28 +486,27 @@ local tabBtns={}
 for i,name in ipairs(TAB_NAMES) do
     tabPages[name]={}
     local btn=New("TextButton",{Text=name,BackgroundColor3=T.Panel,
-        BackgroundTransparency=0.5,AutoButtonColor=false,
+    local btn=New("TextButton",{Text=name,BackgroundColor3=T.Panel,
+        BackgroundTransparency=1,AutoButtonColor=false,
         Font=Enum.Font.GothamBold,TextSize=sc(11),TextColor3=T.Dim,
         Size=UDim2.new(1/#TAB_NAMES,0,1,0),LayoutOrder=i,ZIndex=12,Parent=tabBar})
-    tabBtns[name]=btn
+    local underline=New("Frame",{Size=UDim2.new(0,0,0,2),Position=UDim2.new(0,0,1,-2),
+        BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=13,Parent=btn})
+    tabBtns[name]={btn=btn,ul=underline}
     btn.Activated:Connect(function()
         showTab(name)
-        for n,b in pairs(tabBtns) do
-            Tween(b,0.12,{BackgroundTransparency=n==name and 0 or 0.5})
-            b.TextColor3=n==name and T.Accent or T.Dim
+        for n,d in pairs(tabBtns) do
+            d.btn.TextColor3=n==name and T.Accent or T.Dim
+            Tween(d.ul,0.15,{Size=UDim2.new(n==name and 1 or 0,0,0,2)})
         end
     end)
 end
-
--- ── VISUAL TAB ────────────────────────────────────────────
-recTab="Visual"
-makeSep("── Player ESP ──")
+makeSep("PLAYER ESP")
 makeToggle("ESP Enabled",       "esp_enabled")
 makeToggle("Box",               "esp_box")
 makeToggle("Name",              "esp_name")
 makeToggle("Health Bar",        "esp_health")
 makeToggle("Distance",          "esp_dist")
-makeToggle("Tracers",           "esp_tracer")
 makeToggle("Highlight (Chams)", "esp_chams")
 do
     -- ESP Max Distance slider: 100–2000m
@@ -529,11 +559,63 @@ do
         end
     end))
 end
-makeSep("── Crosshair ──")
+makeSep("CROSSHAIR")
 makeToggle("Crosshair",         "crosshair_enabled")
-makeSep("── Team Check ──")
+makeSep("FOV CHANGER")
+makeToggle("FOV Changer",       "w_fovchanger")
+do
+    local row=makeRow()
+    New("TextLabel",{Text="Custom FOV",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=30,120
+    local function setFOV(v)
+        v=math.clamp(math.floor(v+0.5),MIN,MAX)
+        Flags.w_customfov=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v)
+    end
+    setFOV(Flags.w_customfov)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setFOV(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setFOV(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
+end
+makeSep("TEAM CHECK")
 makeToggle("Team Check",        "tc_enabled")
-makeSep("── Combat Visuals ──")
+makeSep("COMBAT VISUALS")
 makeToggle("X-Ray",             "m_xray")
 do
     -- X-Ray transparency slider: 0.1 (barely see-through) to 0.98 (nearly invisible)
@@ -589,7 +671,7 @@ end
 
 -- ── WORLD TAB ─────────────────────────────────────────────
 recTab="World"
-makeSep("── World ESP ──")
+makeSep("WORLD ESP")
 makeToggle("Harvestables",  "wesp_harv")
 makeToggle("Ore / Stone",   "wesp_ore")
 makeToggle("Sleepers",      "wesp_sleepers")
@@ -599,17 +681,17 @@ makeToggle("Rockets",       "wesp_rockets")
 makeToggle("Turrets",       "wesp_turrets")
 makeToggle("Storage",       "wesp_storage")
 makeToggle("Sleeping Bags", "wesp_beds")
-makeSep("── Lighting ──")
+makeSep("LIGHTING")
 makeToggle("Full Bright",   "w_fullbright")
 makeToggle("No Fog",        "w_nofog")
 makeToggle("No Shadows",    "w_noshadows")
-makeSep("── Environment ──")
+makeSep("ENVIRONMENT")
 makeToggle("No Leaves",     "w_notrees")
 makeToggle("No Grass",      "w_nograss")
 
 -- ── PLAYER TAB ────────────────────────────────────────────
 recTab="Player"
-makeSep("── Movement ──")
+makeSep("MOVEMENT")
 makeToggle("Omni Sprint (Crouch)", "m_omnisprint")
 do
     -- Speed slider: 16–100, default 24
@@ -715,13 +797,62 @@ do
     end))
     if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
 end
-makeSep("── Combat ──")
+makeSep("COMBAT")
 makeToggle("Silent Aim",       "sa_enabled")
 makeToggle("Always Headshot",  "always_headshot")
 makeToggle("No Recoil",        "no_recoil")
 makeToggle("No Spread",        "no_spread")
-makeToggle("Rapid Fire",       "rapid_fire")
-makeToggle("Aimbot Lock",      "ab_enabled")
+makeToggle("Fire Rate Changer","fr_enabled")
+do
+    local row=makeRow()
+    New("TextLabel",{Text="Fire Rate (RPM)",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.22,0,1,0),Position=UDim2.new(0.78,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=250,1500
+    local function setRPM(v)
+        v=math.clamp(math.floor(v/50+0.5)*50,MIN,MAX)
+        Flags.fr_rpm=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v)
+    end
+    setRPM(Flags.fr_rpm)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setRPM(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setRPM(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
+end
 makeToggle("Triggerbot",       "tb_enabled")
 do
     -- Triggerbot FOV slider: 10-200px
@@ -773,57 +904,6 @@ do
         end
     end))
 end
-do
-    -- Aimbot lock-on distance slider: 50–500 studs
-    Flags.ab_maxdist = Flags.ab_maxdist or 300
-    local row=makeRow()
-    New("TextLabel",{Text="Lock-On Dist",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=50,1000
-    local function setDist(v)
-        v=math.clamp(math.floor(v/10+0.5)*10,MIN,MAX)
-        Flags.ab_maxdist=v; Flags.sa_maxdist=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v).."m"
-    end
-    setDist(Flags.ab_maxdist)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setDist(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setDist(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-end
 
 recTab=nil
 
@@ -836,7 +916,7 @@ do
         if not Flags.tb_enabled then return end
         if not GunFire then return end
         local now=os.clock()
-        local delay=(Flags.tb_delay or 50)/1000
+        local delay=(Flags.tb_delay or 0)/1000
         if now-_tbLastFire < delay then return end
         local target=getClosest("Head",Flags.tb_fov or 60,Flags.sa_maxdist or 300)
         if not target then return end
@@ -858,8 +938,8 @@ end
 
 -- default tab
 showTab("Visual")
-tabBtns["Visual"].TextColor3=T.Accent
-Tween(tabBtns["Visual"],0,{BackgroundTransparency=0})
+tabBtns["Visual"].btn.TextColor3=T.Accent
+Tween(tabBtns["Visual"].ul,0,{Size=UDim2.new(1,0,0,2)})
 
 -- ══════════════════════════════════════════════════════════
 -- MOBILE CONTROLS HOOK
@@ -1009,24 +1089,25 @@ end
 -- ══════════════════════════════════════════════════════════
 -- GUNFIRE HOOK  (Silent Aim + No Spread)
 -- ══════════════════════════════════════════════════════════
-local GunFire=nil
-task.spawn(function()
-    GunFire=game:GetService("ReplicatedStorage"):WaitForChild("GunFire",15)
-end)
-
 local _hooked=false
-local _rapidFireActive=false
+local _frLastFired=0
 track(RunService.Heartbeat:Connect(function()
     if _hooked or not GunFire or not hookfunction then return end
     _hooked=true
     local orig=GunFire.FireServer
     hookfunction(orig,newcclosure(function(self,...)
         local args={...}
+        if Flags.fr_enabled then
+            local cooldown=60/(Flags.fr_rpm or 600)
+            local now=os.clock()
+            if now-_frLastFired < cooldown then return end
+            _frLastFired=now
+        end
         local origin=typeof(args[1])=="Vector3" and args[1] or workspace.CurrentCamera.CFrame.Position
         local cam=workspace.CurrentCamera
 
-        -- Aimbot headshot guarantee: when ab_enabled/fire_held, always redirect to head
-        if (Flags.ab_enabled or Flags._fire_held) and not Flags.sa_enabled then
+        -- Aimbot headshot guarantee: when fire_held, always redirect to head
+        if Flags._fire_held and not Flags.sa_enabled then
             local target=getClosest("Head",math.huge,Flags.ab_maxdist or 300)
             if target then
                 local part=getR6Part(target.char,Flags.ab_part or "Head")
@@ -1061,16 +1142,6 @@ track(RunService.Heartbeat:Connect(function()
             if bestHead then
                 local dir=(bestHead.Position-origin)
                 if dir.Magnitude>0.01 then args[3]=dir.Unit end
-                if Flags.rapid_fire and not _rapidFireActive then
-                    local result=orig(self,table.unpack(args))
-                    _rapidFireActive=true
-                    task.spawn(function()
-                        local extra=math.max(1,math.floor(Flags.rapid_fire_mult or 3)-1)
-                        for _=1,extra do task.wait();task.spawn(function() orig(self,table.unpack(args)) end) end
-                        _rapidFireActive=false
-                    end)
-                    return result
-                end
                 return orig(self,table.unpack(args))
             end
         end
@@ -1093,22 +1164,10 @@ track(RunService.Heartbeat:Connect(function()
         end
 
         -- No Spread
-        if Flags.no_spread and not _rapidFireActive then
+        if Flags.no_spread then
             if #args>=3 and typeof(args[3])=="Vector3" then
                 args[3]=cam.CFrame.LookVector
             end
-        end
-
-        -- Rapid Fire standalone
-        if Flags.rapid_fire and not _rapidFireActive then
-            local result=orig(self,table.unpack(args))
-            _rapidFireActive=true
-            task.spawn(function()
-                local extra=math.max(1,math.floor(Flags.rapid_fire_mult or 3)-1)
-                for _=1,extra do task.wait();task.spawn(function() orig(self,table.unpack(args)) end) end
-                _rapidFireActive=false
-            end)
-            return result
         end
 
         return orig(self,table.unpack(args))
@@ -1128,9 +1187,9 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
--- ── Aimbot (RenderStepped, only when fire held OR ab_enabled toggle) ──
+-- ── Aimbot (RenderStepped, only when fire held) ──
 track(RunService.RenderStepped:Connect(function()
-    if not Flags.ab_enabled and not Flags._fire_held then return end
+    if not Flags._fire_held then return end
     local partName=Flags.ab_part or "Head"
     local target=getClosest(partName,Flags.ab_fov or 120, Flags.ab_maxdist or 300)
     if not target then return end
@@ -1300,25 +1359,7 @@ do
                 d.dl.Visible=true
             else d.dl.Visible=false end
 
-            if Flags.esp_tracer then
-                local origin=Flags.esp_tracer_origin or "Bottom"
-                local ox,oy
-                if origin=="Center" then ox,oy=vps.X*0.5,vps.Y*0.5
-                elseif origin=="Mouse" then
-                    local mp=UserInputService:GetMouseLocation();ox,oy=mp.X,mp.Y
-                else ox,oy=vps.X*0.5,vps.Y end
-                local tx=(x1+x2)*0.5;local ty=(y1+y2)*0.5  -- aim at torso center
-                local dx,dy=tx-ox,ty-oy
-                local len=math.sqrt(dx*dx+dy*dy)
-                if len>=2 then
-                    d.tr.Position=UDim2.fromOffset(ox,oy)
-                    d.tr.Size=UDim2.fromOffset(len,1)
-                    d.tr.Rotation=math.deg(math.atan2(dy,dx))
-                    d.tr.BackgroundColor3=Flags.esp_tracer_col or Color3.fromRGB(0,180,255)
-                    d.tr.BackgroundTransparency=0
-                    d.tr.Visible=true
-                else d.tr.Visible=false end
-            else d.tr.Visible=false end
+            d.tr.Visible=false
 
             if Flags.esp_chams then
                 d.hl.Adornee=char
@@ -1336,6 +1377,24 @@ do
         end
     end))
     Players.PlayerRemoving:Connect(removeESP)
+end
+
+-- ══════════════════════════════════════════════════════════
+-- FOV CHANGER
+-- ══════════════════════════════════════════════════════════
+do
+    local _origFov=nil
+    track(RunService.RenderStepped:Connect(function()
+        if Flags.w_fovchanger then
+            if not _origFov then _origFov=workspace.CurrentCamera.FieldOfView end
+            workspace.CurrentCamera.FieldOfView=Flags.w_customfov or 70
+        else
+            if _origFov then
+                workspace.CurrentCamera.FieldOfView=_origFov
+                _origFov=nil
+            end
+        end
+    end))
 end
 
 -- ══════════════════════════════════════════════════════════
@@ -1603,7 +1662,7 @@ do
         local e=math.floor(now-_start)
         local fps=math.floor(_frames/math.max(now-_sample,0.001)+0.5)
         _frames=0;_sample=now
-        wmL.Text=string.format("APEX  |  %d:%02d  |  %dfps",math.floor(e/60),e%60,fps)
+        wmL.Text="PROJECT APEX  |  "..math.floor(e/60)..":"..string.format("%02d",e%60).."  |  "..fps.."fps"
     end))
 end
 
@@ -1792,4 +1851,4 @@ do
     end))
 end
 
-print("[ApexEngine Mobile] Ready.")
+print("[Project Apex Mobile] Ready.")
