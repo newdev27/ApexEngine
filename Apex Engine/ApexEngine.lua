@@ -3546,17 +3546,29 @@ do
         local mat = VM_MAT_MAP[flags["vm_material"] or "Forcefield"] or Enum.Material.ForceField
         local col = VM_COLORS[flags["vm_color"] or "Cyan"] or Color3.fromRGB(0,255,255)
         local trans = (flags["vm_transparency"] or 0) / 100
+        -- Apply to RS templates
         for _, name in ipairs(VM_NAMES) do
-            local parts = getVMParts(name)
-            for _, p in ipairs(parts) do
+            for _, p in ipairs(getVMParts(name)) do
                 if not _vmOrig[p] then
                     _vmOrig[p] = { Color3=p.Color, Material=p.Material, Transparency=p.Transparency }
                 end
-                pcall(function()
-                    p.Color = col
-                    p.Material = mat
-                    p.Transparency = trans
-                end)
+                pcall(function() p.Color=col; p.Material=mat; p.Transparency=trans end)
+            end
+        end
+        -- Also apply to any equipped tool's descendants (game clones from RS on equip)
+        local char = LocalPlayer.Character
+        if char then
+            for _, child in ipairs(char:GetChildren()) do
+                if child:IsA("Tool") then
+                    for _, p in ipairs(child:GetDescendants()) do
+                        if p:IsA("BasePart") then
+                            if not _vmOrig[p] then
+                                _vmOrig[p] = { Color3=p.Color, Material=p.Material, Transparency=p.Transparency }
+                            end
+                            pcall(function() p.Color=col; p.Material=mat; p.Transparency=trans end)
+                        end
+                    end
+                end
             end
         end
     end
@@ -3588,16 +3600,24 @@ do
         local trans = flags["vm_transparency"] or 0
         if not _prevVM or mat ~= _prevMat or col ~= _prevCol or trans ~= _prevTrans then
             _prevVM, _prevMat, _prevCol, _prevTrans = true, mat, col, trans
+            table.clear(_vmOrig)  -- force re-save so game-reset parts get re-applied
             applyVM()
         end
     end))
-    -- On respawn the VM models get fresh parts; wipe saved originals so applyVM re-saves them
-    LocalPlayer.CharacterAdded:Connect(function()
+    -- Re-apply whenever a tool is equipped (game resets RS parts on equip)
+    local function onCharAdded(char)
         table.clear(_vmOrig)
+        char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") and ApexEngine.Flags["vm_enabled"] then
+                task.defer(applyVM)
+            end
+        end)
         if ApexEngine.Flags["vm_enabled"] then
             task.defer(applyVM)
         end
-    end)
+    end
+    LocalPlayer.CharacterAdded:Connect(onCharAdded)
+    if LocalPlayer.Character then onCharAdded(LocalPlayer.Character) end
 end
 
 return ApexEngine
