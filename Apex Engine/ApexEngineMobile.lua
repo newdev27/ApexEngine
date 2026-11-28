@@ -1,8 +1,3 @@
---[[
-    Apex Engine Mobile — Brisk Survival
-    Mobile UI: draggable panel + dedicated Aimbot button + Open/Close button
-]]
-
 if getgenv().apexengine_mobile_loaded then
     while task.wait(99999) do end
 end
@@ -46,6 +41,8 @@ local T = {
     Green  = Color3.fromRGB(60,220,110),
     ABOn   = Color3.fromRGB(255,80,80),   -- aimbot button active colour
     ABOff  = Color3.fromRGB(40,20,20),
+    TBOn   = Color3.fromRGB(255,140,0),
+    TBOff  = Color3.fromRGB(40,30,10),
 }
 
 local function New(cls, props, kids)
@@ -93,6 +90,9 @@ local Flags = {
     _fire_held=false,
     _crouch_held=false,
     tc_enabled=true,
+    tb_enabled=false,
+    tb_fov=60,
+    tb_delay=50,
 }
 
 -- ── Key system ────────────────────────────────────────────
@@ -254,6 +254,28 @@ local openBtn=New("TextButton",{
 Corner(sc(24),openBtn)
 
 -- ══════════════════════════════════════════════════════════
+-- TRIGGERBOT BUTTON  (always visible, left side above aimbot)
+-- ══════════════════════════════════════════════════════════
+local tbBtn=New("TextButton",{
+    Text="🔫",
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(10),0.5,-sc(36)),
+    Size=UDim2.fromOffset(sc(56),sc(48)),
+    BackgroundColor3=T.TBOff,
+    AutoButtonColor=false,
+    Font=Enum.Font.GothamBlack,
+    TextSize=sc(20),
+    TextColor3=Color3.new(1,1,1),
+    ZIndex=20,
+    Parent=rootGui,
+})
+Corner(sc(10),tbBtn)
+tbBtn.Activated:Connect(function()
+    Flags.tb_enabled=not Flags.tb_enabled
+    Tween(tbBtn,0.15,{BackgroundColor3=Flags.tb_enabled and T.TBOn or T.TBOff})
+end)
+
+-- ══════════════════════════════════════════════════════════
 -- AIMBOT BUTTON  (always visible, bottom-right)
 -- Hold = aimbot active while held; tap = toggle lock-on
 -- ══════════════════════════════════════════════════════════
@@ -291,6 +313,11 @@ abBtn.InputEnded:Connect(function(i)
         Tween(abBtn,0.15,{BackgroundColor3=col,Size=UDim2.fromOffset(sc(56),sc(56))})
     end
 end)
+
+-- keep TB button color in sync
+track(RunService.Heartbeat:Connect(function()
+    tbBtn.BackgroundColor3=Flags.tb_enabled and T.TBOn or T.TBOff
+end))
 
 -- ══════════════════════════════════════════════════════════
 -- SETTINGS PANEL  (draggable, shown/hidden by openBtn)
@@ -695,6 +722,57 @@ makeToggle("No Recoil",        "no_recoil")
 makeToggle("No Spread",        "no_spread")
 makeToggle("Rapid Fire",       "rapid_fire")
 makeToggle("Aimbot Lock",      "ab_enabled")
+makeToggle("Triggerbot",       "tb_enabled")
+do
+    -- Triggerbot FOV slider: 10-200px
+    local row=makeRow()
+    New("TextLabel",{Text="TB FOV",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
+        Position=UDim2.new(0.45,0,0.5,-sc(3)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
+    Corner(4,bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=14,Parent=bar})
+    Corner(4,fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
+    Corner(sc(7),grab)
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
+    local MIN,MAX=10,200
+    local function setFov(v)
+        v=math.clamp(math.floor(v+0.5),MIN,MAX)
+        Flags.tb_fov=v
+        local p=(v-MIN)/(MAX-MIN)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=tostring(v).."px"
+    end
+    setFov(Flags.tb_fov)
+    local sliding=false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setFov(MIN+(MAX-MIN)*p)
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+            setFov(MIN+(MAX-MIN)*p)
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+end
 do
     -- Aimbot lock-on distance slider: 50–500 studs
     Flags.ab_maxdist = Flags.ab_maxdist or 300
@@ -748,6 +826,35 @@ do
 end
 
 recTab=nil
+
+-- ══════════════════════════════════════════════════════════
+-- TRIGGERBOT  (fires GunFire when enemy is in center FOV)
+-- ══════════════════════════════════════════════════════════
+do
+    local _tbLastFire=0
+    track(RunService.Heartbeat:Connect(function()
+        if not Flags.tb_enabled then return end
+        if not GunFire then return end
+        local now=os.clock()
+        local delay=(Flags.tb_delay or 50)/1000
+        if now-_tbLastFire < delay then return end
+        local target=getClosest("Head",Flags.tb_fov or 60,Flags.sa_maxdist or 300)
+        if not target then return end
+        if not isEnemyVisible(target) then return end
+        _tbLastFire=now
+        local cam=workspace.CurrentCamera
+        local origin=cam.CFrame.Position
+        local part=getR6Part(target.char,"Head")
+        if not part then return end
+        local aimPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,origin)
+        local dir=(aimPos-origin).Unit
+        task.spawn(function()
+            pcall(function()
+                GunFire:FireServer(origin,origin,dir,"",os.clock(),false,0,0,nil)
+            end)
+        end)
+    end))
+end
 
 -- default tab
 showTab("Visual")
