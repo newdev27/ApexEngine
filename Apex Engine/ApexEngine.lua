@@ -1231,13 +1231,37 @@ cfgRight:AddCheckbox({ Name="Watermark", Default=true, Flag="m_watermark" })
 cfgRight:AddCheckbox({ Name="Auto Load", Default=false, Flag="cfg_autoload" })
 cfgRight:AddSeparator()
 cfgRight:AddButton({ Name="Unload Script", Callback=function()
+    -- Restore world state BEFORE disconnecting connections
+    pcall(function()
+        Lighting.Brightness      = _origBrightness
+        Lighting.Ambient         = _origAmbient
+        Lighting.OutdoorAmbient  = _origOutdoor
+        Lighting.FogEnd          = _origFogEnd
+        Lighting.FogStart        = _origFogStart
+        Lighting.GlobalShadows   = _origGlobalShadows
+        Lighting.ClockTime       = _origClockTime
+    end)
+    -- Restore grass
+    pcall(function()
+        local terrain = workspace:FindFirstChildOfClass("Terrain")
+        if terrain then terrain.Decoration = true end
+    end)
+    -- Restore leaves
+    pcall(function()
+        for _, entry in ipairs(_hiddenTrees) do
+            pcall(function() entry[1].Parent = entry[2] end)
+        end
+        table.clear(_hiddenTrees)
+    end)
     -- Clean up all runtime connections
     for _, c in ipairs(_runtimeConnections) do pcall(function() c:Disconnect() end) end
     table.clear(_runtimeConnections)
     -- Destroy GUIs
     pcall(function() Window:Destroy() end)
     pcall(function()
-        for _, gui in ipairs({ "ApexWatermark", "ApexESP", "ApexFOV", "ApexEngineUI" }) do
+        for _, gui in ipairs({ "ApexWatermark", "ApexESP", "ApexFOV", "ApexEngineUI",
+            "ApexKeybinds", "ApexNotices", "ApexCrosshair", "ApexSnapline",
+            "ApexWorldESP", "ApexC4ESP", "ApexBulletTracers" }) do
             local g = GetParentGui():FindFirstChild(gui)
             if g then g:Destroy() end
         end
@@ -1649,16 +1673,15 @@ end)
 -- ============================================================
 -- WORLD: persistent watchers
 -- ============================================================
+local _origBrightness    = Lighting.Brightness
+local _origAmbient       = Lighting.Ambient
+local _origOutdoor       = Lighting.OutdoorAmbient
+local _origFogEnd        = Lighting.FogEnd
+local _origFogStart      = Lighting.FogStart
+local _origGlobalShadows = Lighting.GlobalShadows
+local _origClockTime     = Lighting.ClockTime
+local _hiddenTrees       = {}
 do
-    -- Saved originals for restore
-    local _origBrightness    = Lighting.Brightness
-    local _origAmbient       = Lighting.Ambient
-    local _origOutdoor       = Lighting.OutdoorAmbient
-    local _origFogEnd        = Lighting.FogEnd
-    local _origFogStart      = Lighting.FogStart
-    local _origGlobalShadows = Lighting.GlobalShadows
-    local _origClockTime     = Lighting.ClockTime
-
     -- Restore lighting when features turn off
     local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime = false,false,false,false,false
     local _fbKeyWas = false
@@ -1703,7 +1726,6 @@ do
 
     -- No Trees: unparent existing + watch ChildAdded
     local _noTreesConn = nil
-    local _hiddenTrees = {} -- {obj, originalParent}
 
     local function hideObj(obj, parent)
         if obj.Parent then
