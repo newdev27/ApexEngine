@@ -1,9 +1,3 @@
-
---[[
-    Apex Engine — Brisk Survival cheat
-    Designed and developed by F9r (discord: 5nqs)
-]]
-
 if getgenv().apexengine_loaded then
     while task.wait(99999999) do end
 end
@@ -1958,6 +1952,7 @@ do
         if os.clock() - _tbLastFire < delay then return end
         local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
         if not target then return end
+        if not isEnemyVisible(target) then return end
         _tbLastFire = os.clock()
         if mouse1press and mouse1release then
             mouse1press(); task.delay(0.05, mouse1release)
