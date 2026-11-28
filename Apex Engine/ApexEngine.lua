@@ -960,21 +960,15 @@ local ConfigTab  = Window:AddTab("Configs", Icons.config)
 -- ============================================================
 local CombatPage = CombatTab:AddSubtab("Main")
 
--- Left: Aim Assistance
-local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
-
--- Left: Aimbot
 local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
-abG:AddCheckbox({ Name="Enabled",       Default=false, Flag="ab_enabled" })
-abG:AddKeybind({  Name="Aimbot Key",    Default=Enum.KeyCode.E, Flag="ab_key" })
-abG:AddDropdown({ Name="Aim Part", Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
-abG:AddSlider({   Name="FOV",           Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
-abG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" })
-abG:AddCheckbox({ Name="Prediction",    Default=true,  Flag="ab_predict" })
-abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smooth" })
+abG:AddCheckbox({ Name="Enabled",      Default=false, Flag="ab_enabled" })
+abG:AddKeybind({  Name="Aimbot Key",   Default=Enum.KeyCode.E, Flag="ab_key" })
+abG:AddDropdown({ Name="Aim Part",     Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
+abG:AddSlider({   Name="FOV",          Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
+abG:AddSlider({   Name="Max Distance", Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" })
+abG:AddCheckbox({ Name="Prediction",   Default=true,  Flag="ab_predict" })
+abG:AddSlider({   Name="Smoothness",   Min=1, Max=50, Default=10, Flag="ab_smooth" })
 
-
--- Right: Misc Combat
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 560)
 miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
 miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
@@ -993,8 +987,6 @@ miscG:AddKeybind({  Name="Triggerbot Key",  Default=Enum.KeyCode.CapsLock, Flag=
 miscG:AddSlider({   Name="Trigger FOV",     Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
 miscG:AddSlider({   Name="Reaction Delay",  Min=0, Max=500, Default=50, Suffix="ms", Flag="tb_delay" })
 miscG:AddSlider({   Name="TB Max Distance", Min=50, Max=2000, Default=850, Suffix="m", Flag="tb_maxdist" })
-
-
 
 -- ============================================================
 -- VISUAL TAB
