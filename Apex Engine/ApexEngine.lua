@@ -3575,19 +3575,23 @@ do
     end
 
     local _prevVM = false
-    local _vmTick = 0
-    trackConnection(RunService.Heartbeat:Connect(function(dt)
-        local enabled = ApexEngine.Flags["vm_enabled"] == true
+    local _prevMat, _prevCol, _prevTrans
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        local enabled = flags["vm_enabled"] == true
         if not enabled then
             if _prevVM then restoreVM() end
             _prevVM = false
+            _prevMat, _prevCol, _prevTrans = nil, nil, nil
             return
         end
-        _prevVM = true
-        _vmTick += dt
-        if _vmTick < 1 then return end  -- re-apply every 1s
-        _vmTick = 0
-        applyVM()
+        local mat   = flags["vm_material"] or "Forcefield"
+        local col   = flags["vm_color"] or "Cyan"
+        local trans = flags["vm_transparency"] or 0
+        if not _prevVM or mat ~= _prevMat or col ~= _prevCol or trans ~= _prevTrans then
+            _prevVM, _prevMat, _prevCol, _prevTrans = true, mat, col, trans
+            applyVM()
+        end
     end))
 end
 
