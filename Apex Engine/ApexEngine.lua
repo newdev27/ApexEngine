@@ -1003,9 +1003,8 @@ miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Bullet Tracers",  Default=false, Flag="bullet_tracers" })
 miscG:AddColorPicker({ Name="Tracer Color", Default=Color3.fromRGB(255,80,80), Flag="tracer_col" })
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Spinbot",         Default=false, Flag="spinbot" })
-miscG:AddSlider({   Name="Spin Speed",      Min=1,Max=50,Default=25,Flag="spinbot_speed" })
-miscG:AddDropdown({ Name="Spin Pitch",      Items={"Normal","Down","Jitter"}, Default="Normal", Flag="spinbot_pitch" })
+miscG:AddCheckbox({ Name="Fire Rate Changer", Default=false, Flag="fr_enabled" })
+miscG:AddSlider({   Name="Fire Rate",        Min=250, Max=1500, Default=600, Suffix=" RPM", Flag="fr_rpm" })
 
 -- Right: Snapline
 local snapG = CombatPage:AddGroup("Snapline", Icons.dagger, "Right", 220)
@@ -1014,14 +1013,6 @@ snapG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,200,0), Fl
 snapG:AddDropdown({ Name="Origin",        Items={"Bottom","Center"}, Default="Bottom", Flag="snap_origin" })
 snapG:AddSlider({   Name="Thickness",     Min=1,Max=5,Default=1,Flag="snap_thick" })
 
--- Right: Target Lines
-local tlineG = CombatPage:AddGroup("Target Lines", Icons.dagger, "Right", 260)
-tlineG:AddCheckbox({ Name="Enabled",       Default=false, Flag="tl_enabled" })
-tlineG:AddColorPicker({ Name="Color",       Default=Color3.fromRGB(255,50,50), Flag="tl_col" })
-tlineG:AddDropdown({ Name="Target Part",   Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="tl_part" })
-tlineG:AddDropdown({ Name="Origin",        Items={"Bottom","Center","Mouse"}, Default="Bottom", Flag="tl_origin" })
-tlineG:AddCheckbox({ Name="Closest Only",  Default=true,  Flag="tl_closest" })
-tlineG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=800,Suffix="m",Flag="tl_maxdist" })
 
 -- ============================================================
 -- VISUAL TAB
@@ -1767,6 +1758,7 @@ do
     end
 
     local _rapidFireActive = false
+    local _frLastFired = 0
 
     local _saHooked = false
     trackConnection(RunService.Heartbeat:Connect(function()
@@ -1776,6 +1768,14 @@ do
         hookfunction(orig, newcclosure(function(self, ...)
             local args = {...}
             local flags = ApexEngine.Flags
+
+            -- Fire Rate Changer: block shots that come in too fast
+            local frCooldown = getgenv()._apexFRCooldown or 0
+            if frCooldown > 0 then
+                local now = os.clock()
+                if now - _frLastFired < frCooldown then return end
+                _frLastFired = now
+            end
             local origin = (typeof(args[1]) == "Vector3") and args[1] or workspace.CurrentCamera.CFrame.Position
 
             -- Aimbot headshot guarantee: when aimbot key held, always redirect to head
@@ -1947,7 +1947,6 @@ do
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
         if not flags["tb_enabled"] then return end
-        if not isBindHeld(flags["tb_key"] or Enum.KeyCode.CapsLock) then return end
         local delay = (flags["tb_delay"] or 50) / 1000
         if os.clock() - _tbLastFire < delay then return end
         local target = getClosestEnemy(flags["sa_part"] or "Head", flags["tb_fov"] or 15)
@@ -2125,15 +2124,6 @@ do
         hl.Parent = espGui
         d.highlight = hl
 
-        -- Target line
-        local tl = Instance.new("Frame")
-        tl.BackgroundColor3 = Color3.fromRGB(255,50,50)
-        tl.BorderSizePixel = 0
-        tl.AnchorPoint = Vector2.new(0, 0.5)
-        tl.Visible = false
-        tl.Parent = espGui
-        d.targetLine = tl
-
         _espData[p] = d
     end
 
@@ -2146,7 +2136,6 @@ do
         pcall(function() d.distLabel:Destroy() end)
         pcall(function() d.tracer:Destroy() end)
         pcall(function() d.highlight:Destroy() end)
-        pcall(function() d.targetLine:Destroy() end)
         _espData[p] = nil
     end
 
@@ -2158,7 +2147,6 @@ do
         d.distLabel.Visible  = false
         d.tracer.Visible     = false
         d.highlight.Enabled  = false
-        d.targetLine.Visible = false
     end
 
     -- Draw a box using 4 line frames
@@ -2342,64 +2330,6 @@ do
                 d.highlight.Enabled = false
             end
 
-            -- Target line (R6)
-            if flags["tl_enabled"] then
-                local tlMaxDist = flags["tl_maxdist"] or 800
-                local tlClosest = flags["tl_closest"] ~= false
-                -- skip if closest-only and this isn't the closest enemy
-                local skip = false
-                if tlClosest then
-                    local partName = flags["tl_part"] or "Head"
-                    local closest = getClosestEnemy and getClosestEnemy(partName, tlMaxDist)
-                    if not closest or closest.player ~= p then skip = true end
-                end
-                if not skip and dist <= (flags["tl_maxdist"] or 800) then
-                    local partName = flags["tl_part"] or "Head"
-                    -- R6 part name map
-                    local R6_MAP = {
-                        ["Head"]="Head", ["Torso"]="Torso",
-                        ["Left Arm"]="Left Arm", ["Right Arm"]="Right Arm",
-                        ["Left Leg"]="Left Leg", ["Right Leg"]="Right Leg",
-                    }
-                    local part = char:FindFirstChild(R6_MAP[partName] or partName)
-                    if part then
-                        local sp, onSc = cam:WorldToViewportPoint(part.Position)
-                        if onSc and sp.Z > 0 then
-                            local tx, ty = sp.X, sp.Y
-                            local tlOrigin = flags["tl_origin"] or "Bottom"
-                            local ox, oy
-                            if tlOrigin == "Center" then
-                                ox, oy = cam.ViewportSize.X/2, cam.ViewportSize.Y/2
-                            elseif tlOrigin == "Mouse" then
-                                local mp = UserInputService:GetMouseLocation()
-                                ox, oy = mp.X, mp.Y
-                            else
-                                ox, oy = cam.ViewportSize.X/2, cam.ViewportSize.Y
-                            end
-                            local dx, dy = tx-ox, ty-oy
-                            local len = math.sqrt(dx*dx+dy*dy)
-                            if len >= 1 then
-                                local col = flags["tl_col"] or Color3.fromRGB(255,50,50)
-                                d.targetLine.Position         = UDim2.fromOffset(ox, oy)
-                                d.targetLine.Size             = UDim2.fromOffset(len, 1)
-                                d.targetLine.Rotation         = math.deg(math.atan2(dy, dx))
-                                d.targetLine.BackgroundColor3 = col
-                                d.targetLine.Visible          = true
-                            else
-                                d.targetLine.Visible = false
-                            end
-                        else
-                            d.targetLine.Visible = false
-                        end
-                    else
-                        d.targetLine.Visible = false
-                    end
-                else
-                    d.targetLine.Visible = false
-                end
-            else
-                d.targetLine.Visible = false
-            end
         end
 
         -- Clean up left players
@@ -2798,28 +2728,24 @@ do
 end
 
 -- ============================================================
--- SPINBOT
+-- FIRE RATE CHANGER
 -- ============================================================
 do
+    local _frLastShot = 0
+    -- We gate rapid fire calls by the configured RPM interval.
+    -- The hook already fires the shot; we just suppress extra calls that come
+    -- in faster than the configured rate by tracking time between shots.
+    -- This works by hooking into the existing GunFire hook via a shared flag.
+    -- We expose _frCooldown so the GunFire hook can read it.
+    getgenv()._apexFRCooldown = 0
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
-        if not flags["spinbot"] then return end
-        local char = LocalPlayer.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        local speed = (flags["spinbot_speed"] or 25) * 10
-        local yaw   = (os.clock() * speed) % 360
-        local pitch = 0
-        local mode  = flags["spinbot_pitch"] or "Normal"
-        if mode == "Down" then
-            pitch = -1.3089969389957472
-        elseif mode == "Jitter" then
-            pitch = math.rad(math.random() > 0.5 and 65 or -75)
+        if flags["fr_enabled"] then
+            local rpm = flags["fr_rpm"] or 600
+            getgenv()._apexFRCooldown = 60 / rpm
+        else
+            getgenv()._apexFRCooldown = 0
         end
-        root.CFrame = CFrame.new(root.Position)
-            * CFrame.Angles(0, math.rad(yaw), 0)
-            * CFrame.Angles(pitch, 0, 0)
     end))
 end
 
