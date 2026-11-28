@@ -29,22 +29,30 @@ local function GetGui()
     return LocalPlayer:WaitForChild("PlayerGui")
 end
 
+-- ── Project Apex brand palette ─────────────────────────────
+-- Primary Accent (Apex Crimson)  #E63946
+-- Secondary Accent / Glow        #FF4D5A
+-- Background (Deep Obsidian)     #0B0B0E
+-- Card / Section Background      #14141A (Dark Slate)
+-- Border / Outline               #282834
+-- Text                           #F1F1F5
 local T = {
-    Bg     = Color3.fromRGB(11,11,14),    -- #0B0B0E Deep Obsidian
-    Panel  = Color3.fromRGB(20,20,26),    -- #14141A Dark Slate
-    Border = Color3.fromRGB(40,40,52),    -- #282834
-    Accent = Color3.fromRGB(230,57,70),   -- #E63946 Apex Crimson
-    Accent2= Color3.fromRGB(255,77,90),   -- #FF4D5A Secondary glow
+    Bg     = Color3.fromRGB(11,11,14),    -- #0B0B0E Deep Obsidian (main window)
+    Panel  = Color3.fromRGB(20,20,26),    -- #14141A Dark Slate (cards / sections)
+    Card   = Color3.fromRGB(20,20,26),    -- #14141A alias for section cards
+    Border = Color3.fromRGB(40,40,52),    -- #282834 crisp 1px outline
+    Accent = Color3.fromRGB(230,57,70),   -- #E63946 Apex Crimson (primary)
+    Glow   = Color3.fromRGB(255,77,90),   -- #FF4D5A secondary glow
     Text   = Color3.fromRGB(241,241,245), -- #F1F1F5
-    Dim    = Color3.fromRGB(110,112,124),
-    On     = Color3.fromRGB(230,57,70),
-    Off    = Color3.fromRGB(35,22,24),
-    Red    = Color3.fromRGB(255,70,70),
-    Green  = Color3.fromRGB(60,220,110),
-    ABOn   = Color3.fromRGB(230,57,70),
-    ABOff  = Color3.fromRGB(40,18,20),
-    TBOn   = Color3.fromRGB(255,140,0),
-    TBOff  = Color3.fromRGB(40,28,10),
+    Dim    = Color3.fromRGB(130,132,143), -- muted secondary text
+    On     = Color3.fromRGB(230,57,70),   -- toggle on fill = crimson
+    Off    = Color3.fromRGB(40,40,52),    -- toggle off = border slate
+    Red    = Color3.fromRGB(230,57,70),   -- status X / errors = crimson
+    Green  = Color3.fromRGB(60,220,110),  -- status check / success
+    ABOn   = Color3.fromRGB(230,57,70),   -- aimbot active = crimson
+    ABOff  = Color3.fromRGB(28,18,20),
+    TBOn   = Color3.fromRGB(255,77,90),   -- triggerbot active = glow red
+    TBOff  = Color3.fromRGB(28,20,16),
 }
 
 local function New(cls, props, kids)
@@ -176,7 +184,7 @@ if not authed then
     local win=New("Frame",{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),
         Size=UDim2.fromScale(0.88,0.40),BackgroundColor3=T.Bg,BorderSizePixel=0,Parent=kg})
     Corner(14,win)
-    New("TextLabel",{Text="PROJECT APEX — KEY",BackgroundTransparency=1,
+    New("TextLabel",{Text="PROJECT APEX [ MOBILE ]",BackgroundTransparency=1,
         Font=Enum.Font.GothamBlack,TextSize=sc(16),TextColor3=T.Accent,
         Size=UDim2.new(1,-20,0,sc(22)),Position=UDim2.fromOffset(10,10),Parent=win})
     local box=New("TextBox",{BackgroundColor3=T.Panel,BorderSizePixel=0,
@@ -220,104 +228,117 @@ end
 local rootGui=New("ScreenGui",{Name="ApexMobileUI",ResetOnSpawn=false,
     IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Global,Parent=GetGui()})
 
--- ── Floating pill button (open/close) ─────────────────────
--- Draggable APEX pill, bottom-left
-local openBtn=New("TextButton",{
-    Text="APEX",
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,sc(10),1,-sc(10)),
-    Size=UDim2.fromOffset(sc(64),sc(28)),
-    BackgroundColor3=T.Accent,
+-- ══════════════════════════════════════════════════════════
+-- ESP TOGGLE BUTTON  (always visible, bottom-center)
+-- ══════════════════════════════════════════════════════════
+local espBtn=New("TextButton",{
+    Text="👁",
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(76),0.5,0),
+    Size=UDim2.fromOffset(sc(48),sc(48)),
+    BackgroundColor3=T.On,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(11),
-    TextColor3=Color3.fromRGB(255,255,255),
+    TextSize=sc(20),
+    TextColor3=Color3.new(1,1,1),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(14),openBtn)
--- thin border glow
+Corner(sc(24),espBtn)
+espBtn.Activated:Connect(function()
+    Flags.esp_enabled=not Flags.esp_enabled
+    Tween(espBtn,0.15,{BackgroundColor3=Flags.esp_enabled and T.On or T.Off})
+end)
+
+-- ══════════════════════════════════════════════════════════
+-- APEX FLOATING PILL  (draggable, touch-friendly; tap = toggle panel)
+-- ══════════════════════════════════════════════════════════
+local togglePanel  -- forward declared; wired up after the panel is built
+local openBtn=New("TextButton",{
+    Text="APEX",
+    AnchorPoint=Vector2.new(0,1),
+    Position=UDim2.new(0,sc(12),1,-sc(14)),
+    Size=UDim2.fromOffset(sc(92),sc(38)),
+    BackgroundColor3=T.Accent,
+    AutoButtonColor=false,
+    Font=Enum.Font.GothamBlack,
+    TextSize=sc(15),
+    TextColor3=T.Text,
+    ZIndex=20,
+    Parent=rootGui,
+})
+Corner(sc(19),openBtn)
+-- subtle glow ring so the pill reads as a brand element
+New("UIStroke",{Color=T.Glow,Transparency=0.55,Thickness=1.2,
+    ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=openBtn})
+
+-- drag + tap logic (Touch + MouseButton1 for emulator testing)
 do
-    local s=Instance.new("UIStroke")
-    s.Color=T.Accent2; s.Thickness=1; s.Transparency=0.4
-    s.Parent=openBtn
-end
--- make pill draggable
-do
-    local dragging,dStart,dOrigin=false,nil,nil
+    local dragging,dragStart,btnStart,moved
     openBtn.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            dragging=true; dStart=i.Position
-            dOrigin=Vector2.new(openBtn.Position.X.Offset,openBtn.Position.Y.Offset)
+            dragging=true; moved=false
+            dragStart=i.Position; btnStart=openBtn.Position
+            Tween(openBtn,0.10,{BackgroundColor3=T.Glow})
             i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
         end
     end)
     track(UserInputService.InputChanged:Connect(function(i)
         if not dragging then return end
         if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local d=i.Position-dStart
-            openBtn.Position=UDim2.new(0,dOrigin.X+d.X,1,dOrigin.Y+d.Y)
+            local d=i.Position-dragStart
+            if d.Magnitude>sc(6) then moved=true end
+            openBtn.Position=UDim2.new(btnStart.X.Scale,btnStart.X.Offset+d.X,btnStart.Y.Scale,btnStart.Y.Offset+d.Y)
         end
     end))
+    openBtn.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            Tween(openBtn,0.15,{BackgroundColor3=T.Accent})
+            if not moved and togglePanel then togglePanel() end
+        end
+    end)
 end
 
--- ── ESP quick-toggle pill ──────────────────────────────────
-local espBtn=New("TextButton",{
-    Text="ESP",
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,sc(82),1,-sc(10)),
-    Size=UDim2.fromOffset(sc(52),sc(28)),
-    BackgroundColor3=T.On,
-    AutoButtonColor=false,
-    Font=Enum.Font.GothamBlack,
-    TextSize=sc(11),
-    TextColor3=Color3.fromRGB(255,255,255),
-    ZIndex=20,
-    Parent=rootGui,
-})
-Corner(sc(14),espBtn)
-do local s=Instance.new("UIStroke"); s.Color=T.Accent2; s.Thickness=1; s.Transparency=0.5; s.Parent=espBtn end
-espBtn.Activated:Connect(function()
-    Flags.esp_enabled=not Flags.esp_enabled
-    Tween(espBtn,0.15,{BackgroundColor3=Flags.esp_enabled and T.On or T.Off})
-end)
-
--- ── Triggerbot pill ───────────────────────────────────────
+-- ══════════════════════════════════════════════════════════
+-- TRIGGERBOT BUTTON  (always visible, left side above aimbot)
+-- ══════════════════════════════════════════════════════════
 local tbBtn=New("TextButton",{
-    Text="TB",
-    AnchorPoint=Vector2.new(0,1),
-    Position=UDim2.new(0,sc(142),1,-sc(10)),
-    Size=UDim2.fromOffset(sc(44),sc(28)),
+    Text="🔫",
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(10),0.5,-sc(36)),
+    Size=UDim2.fromOffset(sc(56),sc(48)),
     BackgroundColor3=T.TBOff,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(11),
-    TextColor3=Color3.fromRGB(255,255,255),
+    TextSize=sc(20),
+    TextColor3=Color3.new(1,1,1),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(14),tbBtn)
+Corner(sc(10),tbBtn)
 tbBtn.Activated:Connect(function()
     Flags.tb_enabled=not Flags.tb_enabled
     Tween(tbBtn,0.15,{BackgroundColor3=Flags.tb_enabled and T.TBOn or T.TBOff})
 end)
 
--- ── Aimbot hold button (right side, large touch target) ───
+-- ══════════════════════════════════════════════════════════
+-- AIMBOT BUTTON  (always visible, bottom-right)
+-- Hold = aimbot active while held; tap = toggle lock-on
+-- ══════════════════════════════════════════════════════════
 local abBtn=New("TextButton",{
-    Text="AIM",
-    AnchorPoint=Vector2.new(1,0.5),
-    Position=UDim2.new(1,-sc(10),0.5,0),
-    Size=UDim2.fromOffset(sc(52),sc(52)),
+    Text="🎯",
+    AnchorPoint=Vector2.new(0,0.5),
+    Position=UDim2.new(0,sc(10),0.5,0),
+    Size=UDim2.fromOffset(sc(56),sc(56)),
     BackgroundColor3=T.ABOff,
     AutoButtonColor=false,
     Font=Enum.Font.GothamBlack,
-    TextSize=sc(11),
-    TextColor3=Color3.fromRGB(255,255,255),
+    TextSize=sc(24),
+    TextColor3=Color3.new(1,1,1),
     ZIndex=20,
     Parent=rootGui,
 })
-Corner(sc(26),abBtn)
-do local s=Instance.new("UIStroke"); s.Color=T.Accent; s.Thickness=1.5; s.Transparency=0.3; s.Parent=abBtn end
+Corner(sc(28),abBtn)
 
 -- Aimbot button: hold = fire_held, tap = toggle ab_enabled
 local _abHoldStart=0
@@ -345,53 +366,75 @@ track(RunService.Heartbeat:Connect(function()
 end))
 
 -- ══════════════════════════════════════════════════════════
--- SETTINGS PANEL  (draggable, shown/hidden by openBtn)
+-- PROJECT APEX [ MOBILE ] — SETTINGS PANEL
+-- Mobile-first: centered (AnchorPoint 0.5,0.5) + UIScale responsive,
+-- horizontal scrollable tab bar with crimson active underline,
+-- 2-column sectioned grid (Left / Right), touch drag + smooth scroll.
+-- Component API mirrors ApexUI: AddLabel / AddStatusItem / AddToggle /
+-- AddButton / AddSlider / AddDropdown (exposed as Section:Add* on cards).
 -- ══════════════════════════════════════════════════════════
-local PANEL_SIZE = UDim2.fromScale(0.56, 0.64)
+
+-- Logical design size (~560x360). UIScale shrinks/grows to fit the viewport
+-- so the menu stays inside 480x320..600x360 logical px on any phone.
+local PANEL_W, PANEL_H = 560, 360
 local panel=New("Frame",{
-    AnchorPoint=Vector2.new(0,0),
-    Position=UDim2.fromScale(0.01,0.04),
-    Size=PANEL_SIZE,
+    Name="ApexPanel",
+    AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.fromScale(0.5,0.5),
+    Size=UDim2.fromOffset(PANEL_W,PANEL_H),
     BackgroundColor3=T.Bg,
-    BackgroundTransparency=0,
+    BackgroundTransparency=0.04,
     BorderSizePixel=0,
     ClipsDescendants=true,
     ZIndex=10,
     Visible=true,
     Parent=rootGui,
 })
-Corner(10,panel)
-do
-    local s=Instance.new("UIStroke")
-    s.Color=T.Border; s.Thickness=1; s.Transparency=0
-    s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border
-    s.Parent=panel
-end
+Corner(sc(12),panel)
+New("UIStroke",{Color=T.Border,Transparency=0.15,Thickness=1,
+    ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=panel})
 
--- open/close toggle
+-- responsive scale: fit panel inside viewport with a small margin
+local panelScale=New("UIScale",{Parent=panel})
+track(RunService.RenderStepped:Connect(function()
+    local v=workspace.CurrentCamera.ViewportSize
+    local s=math.min((v.X-24)/PANEL_W,(v.Y-24)/PANEL_H,1.25)
+    panelScale.Scale=math.max(0.42,s)
+end))
+
+-- open/close (wired to the APEX floating pill via the forward-declared ref)
 local panelOpen=true
-openBtn.Activated:Connect(function()
+togglePanel=function()
     panelOpen=not panelOpen
     panel.Visible=panelOpen
     Tween(openBtn,0.15,{BackgroundColor3=panelOpen and T.Accent or T.Panel})
-end)
+end
 
--- top bar (drag handle)
-local topBar=New("Frame",{Size=UDim2.new(1,0,0,sc(34)),
+-- ── top bar (drag handle + brand title) ───────────────────
+local TOP=sc(34)
+local topBar=New("Frame",{Size=UDim2.new(1,0,0,TOP),
     BackgroundColor3=T.Panel,BorderSizePixel=0,ZIndex=11,Parent=panel})
-Corner(10,topBar)
-New("Frame",{Size=UDim2.fromOffset(3,sc(18)),Position=UDim2.fromOffset(sc(10),sc(8)),
-    BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=13,Parent=topBar})
-New("TextLabel",{Text="PROJECT APEX",BackgroundTransparency=1,
-    Font=Enum.Font.GothamBlack,TextSize=sc(12),TextColor3=T.Accent,
-    Size=UDim2.new(0.6,-sc(10),1,0),Position=UDim2.fromOffset(sc(18),0),ZIndex=12,Parent=topBar})
--- drag logic
+Corner(sc(12),topBar)
+New("UIStroke",{Color=T.Border,Transparency=0.35,Thickness=1,
+    ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=topBar})
+New("TextLabel",{Text="Project Apex [ Mobile ]",BackgroundTransparency=1,
+    Font=Enum.Font.GothamBlack,TextSize=sc(14),TextColor3=T.Accent,
+    Size=UDim2.new(1,-sc(24),1,0),Position=UDim2.fromOffset(sc(12),0),
+    TextXAlignment=Enum.TextXAlignment.Left,ZIndex=12,Parent=topBar})
+-- live status dot (green = authed / running)
+local statusDot=New("Frame",{AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-sc(12),0.5,0),Size=UDim2.fromOffset(sc(8),sc(8)),
+    BackgroundColor3=T.Green,BorderSizePixel=0,ZIndex=12,Parent=topBar})
+Corner(sc(4),statusDot)
+New("UIStroke",{Color=T.Glow,Transparency=0.5,Thickness=1,
+    ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=statusDot})
+
+-- drag logic (touch + MouseButton1 for emulator testing)
 do
     local dragging,dragStart,panStart
     topBar.InputBegan:Connect(function(i)
         if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
             dragging=true;dragStart=i.Position;panStart=panel.Position
-            i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
         end
     end)
     track(UserInputService.InputChanged:Connect(function(i)
@@ -408,270 +451,382 @@ do
     end))
 end
 
--- tab bar
-local TAB_NAMES={"Visual","World","Player"}
-local tabBar=New("Frame",{Size=UDim2.new(1,0,0,sc(30)),Position=UDim2.fromOffset(0,sc(34)),
+-- ── tab bar (horizontal, scrollable on narrow screens) ────
+local TAB_NAMES={"Stats","Visual","World","Player"}
+local TAB_H=sc(30)
+local tabBar=New("Frame",{Size=UDim2.new(1,0,0,TAB_H),Position=UDim2.fromOffset(0,TOP),
     BackgroundColor3=T.Panel,BorderSizePixel=0,ZIndex=11,Parent=panel})
-New("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Parent=tabBar})
+New("UIStroke",{Color=T.Border,Transparency=0.5,Thickness=1,
+    ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=tabBar})
+local tabScroll=New("ScrollingFrame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+    BorderSizePixel=0,ScrollBarThickness=0,CanvasSize=UDim2.new(),
+    AutomaticCanvasSize=Enum.AutomaticSize.X,ScrollDirection=Enum.ScrollDirection.X,
+    CanvasPosition=Vector2.new(0,0),Parent=tabBar})
+New("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,
+    SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,sc(2)),Parent=tabScroll})
+New("UIPadding",{PaddingLeft=UDim.new(0,sc(6)),PaddingRight=UDim.new(0,sc(6)),Parent=tabScroll})
 
--- scrollable content
-local content=New("ScrollingFrame",{
-    Size=UDim2.new(1,0,1,-sc(60)),Position=UDim2.fromOffset(0,sc(60)),
-    BackgroundTransparency=1,BorderSizePixel=0,
-    ScrollBarThickness=2,ScrollBarImageColor3=T.Accent,
+-- ── content area: two scrollable columns ──────────────────
+local COL_TOP=TOP+TAB_H
+local COL_GAP=sc(6)
+local contentWrap=New("Frame",{Size=UDim2.new(1,-COL_GAP*2,1,-COL_TOP-sc(6)),
+    Position=UDim2.fromOffset(COL_GAP,COL_TOP),BackgroundTransparency=1,ZIndex=11,Parent=panel})
+local leftCol=New("ScrollingFrame",{Size=UDim2.new(0.5,-COL_GAP/2,1,0),BackgroundTransparency=1,
+    BorderSizePixel=0,ScrollBarThickness=sc(3),ScrollBarImageColor3=T.Accent,
     CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
-    ZIndex=11,Parent=panel,
-})
-New("UIListLayout",{Padding=UDim.new(0,sc(5)),SortOrder=Enum.SortOrder.LayoutOrder,Parent=content})
-New("UIPadding",{PaddingTop=UDim.new(0,sc(6)),PaddingLeft=UDim.new(0,sc(8)),PaddingRight=UDim.new(0,sc(8)),Parent=content})
-
--- ── widget helpers ────────────────────────────────────────
-local wOrder=0
-local function nO() wOrder+=1; return wOrder end
-local tabPages={}
-local recTab=nil
-
-local function makeRow()
-    local r=New("Frame",{Size=UDim2.new(1,0,0,sc(28)),BackgroundTransparency=1,
-        LayoutOrder=nO(),ZIndex=12,Parent=content})
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=r end
-    return r
+    ScrollDirection=Enum.ScrollDirection.Y,Parent=contentWrap})
+local rightCol=New("ScrollingFrame",{Size=UDim2.new(0.5,-COL_GAP/2,1,0),
+    Position=UDim2.new(0.5,COL_GAP/2,0,0),BackgroundTransparency=1,
+    BorderSizePixel=0,ScrollBarThickness=sc(3),ScrollBarImageColor3=T.Accent,
+    CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    ScrollDirection=Enum.ScrollDirection.Y,Parent=contentWrap})
+for _,c in ipairs({leftCol,rightCol}) do
+    New("UIListLayout",{Padding=UDim.new(0,sc(6)),SortOrder=Enum.SortOrder.LayoutOrder,Parent=c})
 end
 
-local function makeSep(title)
+-- ── section / widget builder state ────────────────────────
+local tabCards={}        -- [tabName] = { card, card, ... }
+local tabBtns={}         -- [tabName] = TextButton
+local tabUnderline={}    -- [tabName] = underline Frame
+local recTab,recCol,recSection
+local _order=0
+local function nO() _order+=1; return _order end
 
-    local r=New("Frame",{Size=UDim2.new(1,0,0,sc(20)),BackgroundTransparency=1,
-        LayoutOrder=nO(),ZIndex=12,Parent=content})
+local function colFrame(side) return (side=="Right") and rightCol or leftCol end
+
+-- show/hide all cards per tab
+local function showTab(name)
+    for tname,cards in pairs(tabCards) do
+        local vis=tname==name
+        for _,c in ipairs(cards) do c.Visible=vis end
+    end
+end
+
+-- ── Section card (crimson title + 1px border, AutomaticSize Y) ──
+-- Returned object exposes the Add* component API.
+local function makeSection(title, side)
+    local col=colFrame(side or recCol or "Left")
+    local card=New("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundColor3=T.Card,BorderSizePixel=0,LayoutOrder=nO(),ZIndex=12,Parent=col})
+    Corner(sc(8),card)
+    New("UIStroke",{Color=T.Border,Transparency=0.2,Thickness=1,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=card})
+    New("UIPadding",{PaddingTop=UDim.new(0,sc(9)),PaddingBottom=UDim.new(0,sc(9)),
+        PaddingLeft=UDim.new(0,sc(10)),PaddingRight=UDim.new(0,sc(10)),Parent=card})
+    New("UIListLayout",{Padding=UDim.new(0,sc(7)),SortOrder=Enum.SortOrder.LayoutOrder,Parent=card})
+    -- section header (crimson title + accent underline)
+    local head=New("Frame",{Size=UDim2.new(1,0,0,sc(16)),BackgroundTransparency=1,
+        LayoutOrder=0,ZIndex=13,Parent=card})
     New("TextLabel",{Text=title or "",BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(10),TextColor3=T.Accent,Size=UDim2.fromScale(1,1),ZIndex=13,Parent=r})
-    New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),
-        BackgroundColor3=T.Accent,BackgroundTransparency=0.6,BorderSizePixel=0,Parent=r})
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=r end
+        TextSize=sc(11),TextColor3=T.Accent,TextXAlignment=Enum.TextXAlignment.Left,
+        Size=UDim2.fromScale(1,1),Parent=head})
+    New("Frame",{Size=UDim2.new(0,sc(18),0,2),Position=UDim2.new(0,0,1,-1),
+        BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=head})
+    recSection=card
+    if recTab then tabCards[recTab][#tabCards[recTab]+1]=card end
+    return card
 end
-local function makeToggle(label,flagKey,defOverride)
-    local state=defOverride~=nil and defOverride or (Flags[flagKey]==true)
-    local row=makeRow()
+
+-- keep makeSep as a thin alias so legacy tab-content calls still read cleanly
+local function makeSep(title) return makeSection(title) end
+
+local function makeRow(h)
+    return New("Frame",{Size=UDim2.new(1,0,0,h or sc(30)),BackgroundTransparency=1,
+        LayoutOrder=nO(),ZIndex=13,Parent=recSection})
+end
+
+-- AddLabel (supports :Set for live timers / stats)
+local function makeLabel(text)
+    local row=makeRow(sc(20))
+    local lbl=New("TextLabel",{Text=text or "",BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Left,
+        Size=UDim2.fromScale(1,1),ZIndex=14,Parent=row})
+    return {Set=function(s) lbl.Text=tostring(s) end, Get=function() return lbl.Text end}
+end
+
+-- AddStatusItem (green ✓ / red ✗, updatable via :Set(bool))
+local function makeStatusItem(label, initial)
+    local state=initial==true
+    local row=makeRow(sc(22))
+    local icon=New("TextLabel",{Text=state and "✓" or "✗",BackgroundTransparency=1,
+        Font=Enum.Font.GothamBold,TextSize=sc(13),
+        TextColor3=state and T.Green or T.Red,
+        Size=UDim2.fromOffset(sc(18),1),TextXAlignment=Enum.TextXAlignment.Left,ZIndex=14,Parent=row})
+    local lbl=New("TextLabel",{Text=label or "",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(11),TextColor3=state and T.Text or T.Dim,TextXAlignment=Enum.TextXAlignment.Left,
+        Size=UDim2.new(1,-sc(18),1,0),Position=UDim2.fromOffset(sc(18),0),ZIndex=14,Parent=row})
+    return {Set=function(v)
+        state=v==true
+        icon.Text=state and "✓" or "✗"
+        icon.TextColor3=state and T.Green or T.Red
+        lbl.TextColor3=state and T.Text or T.Dim
+    end, Get=function() return state end}
+end
+
+-- AddToggle (crimson fill when enabled, touch-sized)
+local function makeToggle(label, flagKey)
+    local state=(Flags[flagKey]==true)
+    local row=makeRow(sc(30))
     local lbl=New("TextLabel",{Text=label,BackgroundTransparency=1,Font=Enum.Font.Gotham,
         TextSize=sc(12),TextColor3=state and T.Text or T.Dim,
-        Size=UDim2.new(1,-sc(44),1,0),ZIndex=13,Parent=row})
-    local sw=New("TextButton",{Size=UDim2.fromOffset(sc(36),sc(20)),
-        Position=UDim2.new(1,-sc(36),0.5,-sc(10)),
-        BackgroundColor3=state and T.On or T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(10,sw)
+        Size=UDim2.new(1,-sc(48),1,0),TextXAlignment=Enum.TextXAlignment.Left,ZIndex=14,Parent=row})
+    local sw=New("TextButton",{Size=UDim2.fromOffset(sc(40),sc(22)),
+        Position=UDim2.new(1,-sc(40),0.5,-sc(11)),
+        BackgroundColor3=state and T.On or T.Off,AutoButtonColor=false,Text="",ZIndex=14,Parent=row})
+    Corner(sc(11),sw)
     local knob=New("Frame",{Size=UDim2.fromOffset(sc(16),sc(16)),
         AnchorPoint=Vector2.new(0.5,0.5),
-        Position=UDim2.new(0,state and sc(26) or sc(10),0.5,0),
-        BackgroundColor3=state and T.Accent or T.Dim,ZIndex=14,Parent=sw})
-    Corner(8,knob)
+        Position=UDim2.new(0,state and sc(28) or sc(12),0.5,0),
+        BackgroundColor3=T.Text,ZIndex=15,Parent=sw})
+    Corner(sc(8),knob)
     local function set(v)
         state=v; Flags[flagKey]=v
         Tween(sw,0.15,{BackgroundColor3=v and T.On or T.Off})
-        Tween(knob,0.15,{Position=UDim2.new(0,v and sc(26) or sc(10),0.5,0),
-            BackgroundColor3=v and T.Accent or T.Dim})
+        Tween(knob,0.15,{Position=UDim2.new(0,v and sc(28) or sc(12),0.5,0)})
         lbl.TextColor3=v and T.Text or T.Dim
     end
     sw.Activated:Connect(function() set(not state) end)
     Flags[flagKey]=state
-    return {Set=set,Get=function() return state end}
+    return {Set=set, Get=function() return state end}
 end
 
-local function showTab(name)
-    for tname,rows in pairs(tabPages) do
-        local vis=tname==name
-        for _,r in ipairs(rows) do r.Visible=vis end
+-- AddButton (touch-sized, crimson press flash)
+local function makeButton(label, cb)
+    local row=makeRow(sc(30))
+    local btn=New("TextButton",{Text=label or "",Size=UDim2.fromScale(1,1),
+        BackgroundColor3=T.Card,AutoButtonColor=false,Font=Enum.Font.GothamBold,
+        TextSize=sc(12),TextColor3=T.Text,ZIndex=14,Parent=row})
+    Corner(sc(6),btn)
+    New("UIStroke",{Color=T.Border,Transparency=0.15,Thickness=1,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=btn})
+    btn.Activated:Connect(function()
+        Tween(btn,0.10,{BackgroundColor3=T.Accent,TextColor3=T.Text})
+        task.delay(0.12,function() Tween(btn,0.18,{BackgroundColor3=T.Card}) end)
+        if cb then cb() end
+    end)
+    return btn
+end
+
+-- AddSlider (touch-friendly drag bar; quant/fmt/store via opts)
+local function makeSlider(label, minV, maxV, default, opts)
+    opts=opts or {}
+    local quant=opts.quant or function(v) return math.floor(v+0.5) end
+    local fmt  =opts.fmt   or tostring
+    local store=opts.store or function(v) end
+    local row=makeRow(sc(34))
+    New("TextLabel",{Text=label,BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(11),TextColor3=T.Dim,Size=UDim2.new(0.55,0,0,sc(14)),
+        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=14,Parent=row})
+    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
+        TextSize=sc(11),TextColor3=T.Accent,TextXAlignment=Enum.TextXAlignment.Right,
+        Size=UDim2.new(0.45,0,0,sc(14)),Position=UDim2.new(0.55,0,0,0),ZIndex=14,Parent=row})
+    local bar=New("TextButton",{Size=UDim2.new(1,0,0,sc(8)),Position=UDim2.new(0,0,0,sc(18)),
+        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=14,Parent=row})
+    Corner(sc(4),bar)
+    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
+        BorderSizePixel=0,ZIndex=15,Parent=bar})
+    Corner(sc(4),fill)
+    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
+        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
+        BackgroundColor3=T.Glow,BorderSizePixel=0,ZIndex=16,Parent=bar})
+    Corner(sc(7),grab)
+    New("UIStroke",{Color=T.Accent,Transparency=0.3,Thickness=1,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=grab})
+    local function apply(v)
+        v=quant(math.clamp(v,minV,maxV))
+        store(v)
+        local p=(v-minV)/(maxV-minV)
+        fill.Size=UDim2.new(p,0,1,0)
+        grab.Position=UDim2.new(p,0,0.5,0)
+        valLbl.Text=fmt(v)
     end
+    apply(default)
+    local sliding=false
+    local function pt(i) return math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1) end
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=true; apply(minV+(maxV-minV)*pt(i))
+        end
+    end)
+    track(UserInputService.InputChanged:Connect(function(i)
+        if not sliding then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
+            apply(minV+(maxV-minV)*pt(i))
+        end
+    end))
+    track(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            sliding=false
+        end
+    end))
+    return {Set=apply, Get=function() return Flags[opts.flag] end}
 end
 
-local tabBtns={}
+-- AddDropdown (overlay menu, touch-friendly)
+local function makeDropdown(label, options, default, cb)
+    local cur=default or (options and options[1] or "")
+    local row=makeRow(sc(30))
+    New("TextLabel",{Text=label or "",BackgroundTransparency=1,Font=Enum.Font.Gotham,
+        TextSize=sc(11),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),
+        TextXAlignment=Enum.TextXAlignment.Left,ZIndex=14,Parent=row})
+    local btn=New("TextButton",{Text=cur.."  ▾",Size=UDim2.new(0.55,-sc(2),1,0),
+        Position=UDim2.new(0.45,0,0,0),BackgroundColor3=T.Card,AutoButtonColor=false,
+        Font=Enum.Font.GothamBold,TextSize=sc(11),TextColor3=T.Accent,
+        TextXAlignment=Enum.TextXAlignment.Right,ZIndex=14,Parent=row})
+    Corner(sc(6),btn)
+    New("UIPadding",{PaddingRight=UDim.new(0,sc(6)),Parent=btn})
+    New("UIStroke",{Color=T.Border,Transparency=0.15,Thickness=1,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=btn})
+    local menu=nil
+    local function close() if menu then menu:Destroy(); menu=nil end end
+    btn.Activated:Connect(function()
+        if menu then close(); return end
+        local ap=btn.AbsolutePosition; local as=btn.AbsoluteSize
+        menu=New("Frame",{AnchorPoint=Vector2.new(0,0),
+            Position=UDim2.fromOffset(ap.X,ap.Y+as.Y+sc(2)),
+            Size=UDim2.fromOffset(as.X, sc(26)*#options+sc(8)),
+            BackgroundColor3=T.Panel,BorderSizePixel=0,ClipsDescendants=true,ZIndex=30,Parent=panel})
+        Corner(sc(6),menu)
+        New("UIStroke",{Color=T.Accent,Transparency=0.2,Thickness=1,
+            ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Parent=menu})
+        New("UIListLayout",{Padding=UDim.new(0,0),Parent=menu})
+        New("UIPadding",{PaddingTop=UDim.new(0,sc(4)),PaddingLeft=UDim.new(0,0),PaddingRight=UDim.new(0,0),Parent=menu})
+        for _,opt in ipairs(options) do
+            local o=New("TextButton",{Text="  "..opt,Size=UDim2.new(1,0,0,sc(26)),
+                BackgroundTransparency=1,AutoButtonColor=false,Font=Enum.Font.Gotham,
+                TextSize=sc(11),TextColor3=(opt==cur) and T.Accent or T.Text,
+                TextXAlignment=Enum.TextXAlignment.Left,ZIndex=31,Parent=menu})
+            o.Activated:Connect(function()
+                cur=opt; btn.Text=cur.."  ▾"
+                if cb then cb(cur) end; close()
+            end)
+        end
+    end)
+    -- tap outside closes the menu
+    track(UserInputService.InputBegan:Connect(function(i)
+        if not menu then return end
+        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
+            local mp,ms=menu.AbsolutePosition,menu.AbsoluteSize
+            local bp,bs=btn.AbsolutePosition,btn.AbsoluteSize
+            local p=i.Position
+            local outsideMenu = (p.X<mp.X or p.X>mp.X+ms.X or p.Y<mp.Y or p.Y>mp.Y+ms.Y)
+            local onButton    = (p.X>=bp.X and p.X<=bp.X+bs.X and p.Y>=bp.Y and p.Y<=bp.Y+bs.Y)
+            if outsideMenu and not onButton then close() end
+        end
+    end))
+    return {Set=function(v) cur=v; btn.Text=cur.."  ▾" end, Get=function() return cur end}
+end
+
+-- ── build tab buttons (crimson active underline) ──────────
 for i,name in ipairs(TAB_NAMES) do
-    tabPages[name]={}
-    local btn=New("TextButton",{Text=name,BackgroundColor3=T.Panel,
-    local btn=New("TextButton",{Text=name,BackgroundColor3=T.Panel,
-        BackgroundTransparency=1,AutoButtonColor=false,
-        Font=Enum.Font.GothamBold,TextSize=sc(11),TextColor3=T.Dim,
-        Size=UDim2.new(1/#TAB_NAMES,0,1,0),LayoutOrder=i,ZIndex=12,Parent=tabBar})
-    local underline=New("Frame",{Size=UDim2.new(0,0,0,2),Position=UDim2.new(0,0,1,-2),
-        BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=13,Parent=btn})
-    tabBtns[name]={btn=btn,ul=underline}
+    tabCards[name]={}
+    local wrap=New("Frame",{Size=UDim2.fromOffset(sc(74),TAB_H),BackgroundTransparency=1,
+        LayoutOrder=i,ZIndex=12,Parent=tabScroll})
+    local btn=New("TextButton",{Text=name,Size=UDim2.fromScale(1,1),BackgroundTransparency=1,
+        AutoButtonColor=false,Font=Enum.Font.GothamBold,TextSize=sc(11),
+        TextColor3=T.Dim,ZIndex=13,Parent=wrap})
+    local underline=New("Frame",{Size=UDim2.new(0,sc(26),0,2),
+        AnchorPoint=Vector2.new(0.5,1),Position=UDim2.new(0.5,0,1,-2),
+        BackgroundColor3=T.Accent,BorderSizePixel=0,Visible=false,ZIndex=14,Parent=wrap})
+    tabBtns[name]=btn; tabUnderline[name]=underline
     btn.Activated:Connect(function()
         showTab(name)
-        for n,d in pairs(tabBtns) do
-            d.btn.TextColor3=n==name and T.Accent or T.Dim
-            Tween(d.ul,0.15,{Size=UDim2.new(n==name and 1 or 0,0,0,2)})
+        for n,b in pairs(tabBtns) do
+            local on=(n==name)
+            b.TextColor3=on and T.Accent or T.Dim
+            tabUnderline[n].Visible=on
         end
     end)
 end
-makeSep("PLAYER ESP")
+
+-- ══════════════════════════════════════════════════════════
+-- TAB CONTENT  (2-column sectioned grid)
+-- ══════════════════════════════════════════════════════════
+
+-- ── STATS TAB (Project Apex example "General" tab) ────────
+recTab="Stats"
+recCol="Left"
+makeSep("Session")
+local stTime=makeLabel("Time   0:00")
+local stFps =makeLabel("FPS    0")
+local stPl  =makeLabel("Players 0")
+local stPing=makeLabel("Ping   0ms")
+makeSep("Brand")
+makeLabel("Project Apex v2")
+makeButton("Hide UI", function() if togglePanel then togglePanel() end end)
+
+recCol="Right"
+makeSep("Feature Checklist")
+local ckEsp  =makeStatusItem("Player ESP",   Flags.esp_enabled)
+local ckAim  =makeStatusItem("Silent Aim",   Flags.sa_enabled)
+local ckTb   =makeStatusItem("Triggerbot",   Flags.tb_enabled)
+local ckXray =makeStatusItem("X-Ray",        Flags.m_xray)
+local ckClip =makeStatusItem("No Clip",      Flags.m_noclip)
+local ckFree =makeStatusItem("Free Cam",     Flags.m_freecam)
+makeSep("Default Tab")
+makeDropdown("Open Tab", TAB_NAMES, "Stats", function(v) showTab(v) end)
+
+-- live Stats updater (time / fps / players / ping / checklist)
+do
+    local _t0=os.clock(); local _fr=0; local _samp=_t0
+    track(RunService.RenderStepped:Connect(function() _fr+=1 end))
+    local _st=0
+    track(RunService.Heartbeat:Connect(function(dt)
+        _st+=dt; if _st<0.5 then return end; _st=0
+        local now=os.clock(); local e=math.floor(now-_t0)
+        local fps=math.floor(_fr/math.max(now-_samp,0.001)+0.5); _fr=0; _samp=now
+        stTime.Set(string.format("Time   %d:%02d", math.floor(e/60), e%60))
+        stFps.Set("FPS    "..fps)
+        stPl.Set("Players "..#Players:GetPlayers())
+        stPing.Set("Ping   "..math.floor(LocalPlayer:GetNetworkPing()*1000).."ms")
+        ckEsp.Set(Flags.esp_enabled); ckAim.Set(Flags.sa_enabled)
+        ckTb.Set(Flags.tb_enabled); ckXray.Set(Flags.m_xray)
+        ckClip.Set(Flags.m_noclip); ckFree.Set(Flags.m_freecam)
+    end))
+end
+
+-- ── VISUAL TAB ────────────────────────────────────────────
+recTab="Visual"
+recCol="Left"
+makeSep("── Player ESP ──")
 makeToggle("ESP Enabled",       "esp_enabled")
 makeToggle("Box",               "esp_box")
 makeToggle("Name",              "esp_name")
 makeToggle("Health Bar",        "esp_health")
 makeToggle("Distance",          "esp_dist")
 makeToggle("Highlight (Chams)", "esp_chams")
-do
-    -- ESP Max Distance slider: 100–2000m
-    Flags.esp_maxdist = Flags.esp_maxdist or 1500
-    local row=makeRow()
-    New("TextLabel",{Text="ESP Distance",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=100,2000
-    local function setDist(v)
-        v=math.clamp(math.floor(v/50+0.5)*50,MIN,MAX)
-        Flags.esp_maxdist=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v).."m"
-    end
-    setDist(Flags.esp_maxdist)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setDist(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setDist(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-end
-makeSep("CROSSHAIR")
+Flags.esp_maxdist = Flags.esp_maxdist or 1500
+makeSlider("ESP Distance", 100, 2000, Flags.esp_maxdist, {
+    flag="esp_maxdist",
+    quant=function(v) return math.floor(v/50+0.5)*50 end,
+    fmt=function(v) return tostring(v).."m" end,
+    store=function(v) Flags.esp_maxdist=v end,
+})
+makeSep("── Crosshair ──")
 makeToggle("Crosshair",         "crosshair_enabled")
-makeSep("FOV CHANGER")
+
+recCol="Right"
+makeSep("── FOV Changer ──")
 makeToggle("FOV Changer",       "w_fovchanger")
-do
-    local row=makeRow()
-    New("TextLabel",{Text="Custom FOV",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=30,120
-    local function setFOV(v)
-        v=math.clamp(math.floor(v+0.5),MIN,MAX)
-        Flags.w_customfov=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v)
-    end
-    setFOV(Flags.w_customfov)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setFOV(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setFOV(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
-end
-makeSep("TEAM CHECK")
+makeSlider("Custom FOV", 30, 120, Flags.w_customfov or 70, {
+    flag="w_customfov",
+    fmt=tostring, store=function(v) Flags.w_customfov=v end,
+})
+makeSep("── Team Check ──")
 makeToggle("Team Check",        "tc_enabled")
-makeSep("COMBAT VISUALS")
+makeSep("── Combat Visuals ──")
 makeToggle("X-Ray",             "m_xray")
-do
-    -- X-Ray transparency slider: 0.1 (barely see-through) to 0.98 (nearly invisible)
-    local row=makeRow()
-    New("TextLabel",{Text="X-Ray Trans",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=0.1,0.98
-    local function setTrans(v)
-        v=math.clamp(math.floor(v*100+0.5)/100,MIN,MAX)
-        Flags.m_xray_trans=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(math.floor(v*100)).."%%"
-    end
-    setTrans(Flags.m_xray_trans)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setTrans(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setTrans(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
-end
+makeSlider("X-Ray Trans", 0.1, 0.98, Flags.m_xray_trans or 0.85, {
+    flag="m_xray_trans",
+    quant=function(v) return math.floor(v*100+0.5)/100 end,
+    fmt=function(v) return tostring(math.floor(v*100)).."%" end,
+    store=function(v) Flags.m_xray_trans=v end,
+})
 
 -- ── WORLD TAB ─────────────────────────────────────────────
 recTab="World"
-makeSep("WORLD ESP")
+recCol="Left"
+makeSep("── World ESP ──")
 makeToggle("Harvestables",  "wesp_harv")
 makeToggle("Ore / Stone",   "wesp_ore")
 makeToggle("Sleepers",      "wesp_sleepers")
@@ -681,265 +836,57 @@ makeToggle("Rockets",       "wesp_rockets")
 makeToggle("Turrets",       "wesp_turrets")
 makeToggle("Storage",       "wesp_storage")
 makeToggle("Sleeping Bags", "wesp_beds")
-makeSep("LIGHTING")
+
+recCol="Right"
+makeSep("── Lighting ──")
 makeToggle("Full Bright",   "w_fullbright")
 makeToggle("No Fog",        "w_nofog")
 makeToggle("No Shadows",    "w_noshadows")
-makeSep("ENVIRONMENT")
+makeSep("── Environment ──")
 makeToggle("No Leaves",     "w_notrees")
 makeToggle("No Grass",      "w_nograss")
 
 -- ── PLAYER TAB ────────────────────────────────────────────
 recTab="Player"
-makeSep("MOVEMENT")
+recCol="Left"
+makeSep("── Movement ──")
 makeToggle("Omni Sprint (Crouch)", "m_omnisprint")
-do
-    -- Speed slider: 16–100, default 24
-    Flags.m_omnisprint_bonus = 8  -- default bonus on top of base 16 = 24 total
-    local row=makeRow()
-    New("TextLabel",{Text="Sprint Speed",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=16,100
-    local function setSpeed(v)
-        v=math.clamp(math.floor(v+0.5),MIN,MAX)
-        Flags.m_omnisprint_bonus=v-16
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v)
-    end
-    setSpeed(24)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setSpeed(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setSpeed(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-end
+Flags.m_omnisprint_bonus = Flags.m_omnisprint_bonus or 8
+makeSlider("Sprint Speed", 16, 100, 24, {
+    flag="m_omnisprint_bonus",
+    fmt=tostring, store=function(v) Flags.m_omnisprint_bonus=v-16 end,
+})
 makeToggle("No Clip",              "m_noclip")
 makeToggle("Free Cam",             "m_freecam")
-do
-    -- FreeCam speed slider: 10–200
-    local row=makeRow()
-    New("TextLabel",{Text="Cam Speed",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=10,200
-    local function setSpd(v)
-        v=math.clamp(math.floor(v+0.5),MIN,MAX)
-        Flags.m_freecam_speed=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v)
-    end
-    setSpd(Flags.m_freecam_speed)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setSpd(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setSpd(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
-end
-makeSep("COMBAT")
+makeSlider("Cam Speed", 10, 200, Flags.m_freecam_speed or 40, {
+    flag="m_freecam_speed",
+    fmt=tostring, store=function(v) Flags.m_freecam_speed=v end,
+})
+
+recCol="Right"
+makeSep("── Combat ──")
 makeToggle("Silent Aim",       "sa_enabled")
 makeToggle("Always Headshot",  "always_headshot")
 makeToggle("No Recoil",        "no_recoil")
 makeToggle("No Spread",        "no_spread")
 makeToggle("Fire Rate Changer","fr_enabled")
-do
-    local row=makeRow()
-    New("TextLabel",{Text="Fire Rate (RPM)",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.22,0,1,0),Position=UDim2.new(0.78,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=250,1500
-    local function setRPM(v)
-        v=math.clamp(math.floor(v/50+0.5)*50,MIN,MAX)
-        Flags.fr_rpm=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v)
-    end
-    setRPM(Flags.fr_rpm)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setRPM(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setRPM(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-    if recTab then tabPages[recTab][#tabPages[recTab]+1]=row end
-end
+makeSlider("Fire Rate (RPM)", 250, 1500, Flags.fr_rpm or 600, {
+    flag="fr_rpm",
+    quant=function(v) return math.floor(v/50+0.5)*50 end,
+    fmt=tostring, store=function(v) Flags.fr_rpm=v end,
+})
 makeToggle("Triggerbot",       "tb_enabled")
-do
-    -- Triggerbot FOV slider: 10-200px
-    local row=makeRow()
-    New("TextLabel",{Text="TB FOV",BackgroundTransparency=1,Font=Enum.Font.Gotham,
-        TextSize=sc(12),TextColor3=T.Dim,Size=UDim2.new(0.45,0,1,0),ZIndex=13,Parent=row})
-    local bar=New("TextButton",{Size=UDim2.fromOffset(sc(90),sc(6)),
-        Position=UDim2.new(0.45,0,0.5,-sc(3)),
-        BackgroundColor3=T.Off,AutoButtonColor=false,Text="",ZIndex=13,Parent=row})
-    Corner(4,bar)
-    local fill=New("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,
-        BorderSizePixel=0,ZIndex=14,Parent=bar})
-    Corner(4,fill)
-    local grab=New("Frame",{Size=UDim2.fromOffset(sc(14),sc(14)),
-        AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.new(0,0,0.5,0),
-        BackgroundColor3=T.Accent,ZIndex=15,Parent=bar})
-    Corner(sc(7),grab)
-    local valLbl=New("TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,
-        TextSize=sc(11),TextColor3=T.Text,TextXAlignment=Enum.TextXAlignment.Right,
-        Size=UDim2.new(0.18,0,1,0),Position=UDim2.new(0.82,0,0,0),ZIndex=13,Parent=row})
-    local MIN,MAX=10,200
-    local function setFov(v)
-        v=math.clamp(math.floor(v+0.5),MIN,MAX)
-        Flags.tb_fov=v
-        local p=(v-MIN)/(MAX-MIN)
-        fill.Size=UDim2.new(p,0,1,0)
-        grab.Position=UDim2.new(p,0,0.5,0)
-        valLbl.Text=tostring(v).."px"
-    end
-    setFov(Flags.tb_fov)
-    local sliding=false
-    bar.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=true
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setFov(MIN+(MAX-MIN)*p)
-        end
-    end)
-    track(UserInputService.InputChanged:Connect(function(i)
-        if not sliding then return end
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseMovement then
-            local p=math.clamp((i.Position.X-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
-            setFov(MIN+(MAX-MIN)*p)
-        end
-    end))
-    track(UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then
-            sliding=false
-        end
-    end))
-end
+makeSlider("TB FOV", 10, 200, Flags.tb_fov or 60, {
+    flag="tb_fov",
+    fmt=function(v) return tostring(v).."px" end, store=function(v) Flags.tb_fov=v end,
+})
 
-recTab=nil
+recTab=nil; recCol=nil; recSection=nil
 
--- ══════════════════════════════════════════════════════════
--- TRIGGERBOT  (fires GunFire when enemy is in center FOV)
--- ══════════════════════════════════════════════════════════
-do
-    local _tbLastFire=0
-    track(RunService.Heartbeat:Connect(function()
-        if not Flags.tb_enabled then return end
-        if not GunFire then return end
-        local now=os.clock()
-        local delay=(Flags.tb_delay or 0)/1000
-        if now-_tbLastFire < delay then return end
-        local target=getClosest("Head",Flags.tb_fov or 60,Flags.sa_maxdist or 300)
-        if not target then return end
-        if not isEnemyVisible(target) then return end
-        _tbLastFire=now
-        local cam=workspace.CurrentCamera
-        local origin=cam.CFrame.Position
-        local part=getR6Part(target.char,"Head")
-        if not part then return end
-        local aimPos=predictPos(part.Position,target.root.AssemblyLinearVelocity,origin)
-        local dir=(aimPos-origin).Unit
-        task.spawn(function()
-            pcall(function()
-                GunFire:FireServer(origin,origin,dir,"",os.clock(),false,0,0,nil)
-            end)
-        end)
-    end))
-end
-
--- default tab
-showTab("Visual")
-tabBtns["Visual"].btn.TextColor3=T.Accent
-Tween(tabBtns["Visual"].ul,0,{Size=UDim2.new(1,0,0,2)})
+-- ── default tab: land on the Project Apex example Stats tab ──
+showTab("Stats")
+tabBtns["Stats"].TextColor3=T.Accent
+tabUnderline["Stats"].Visible=true
 
 -- ══════════════════════════════════════════════════════════
 -- MOBILE CONTROLS HOOK
@@ -1662,7 +1609,7 @@ do
         local e=math.floor(now-_start)
         local fps=math.floor(_frames/math.max(now-_sample,0.001)+0.5)
         _frames=0;_sample=now
-        wmL.Text="PROJECT APEX  |  "..math.floor(e/60)..":"..string.format("%02d",e%60).."  |  "..fps.."fps"
+        wmL.Text=string.format("PROJECT APEX  |  %d:%02d  |  %dfps",math.floor(e/60),e%60,fps)
     end))
 end
 
