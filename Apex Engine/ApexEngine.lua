@@ -962,11 +962,6 @@ local CombatPage = CombatTab:AddSubtab("Main")
 
 -- Left: Aim Assistance
 local aimG = CombatPage:AddGroup("Aim Assistance", Icons.crosshairs, "Left", 320)
-aimG:AddCheckbox({ Name="Triggerbot",    Default=false, Flag="tb_enabled" })
-aimG:AddKeybind({  Name="Triggerbot Key",Default=Enum.KeyCode.CapsLock, Flag="tb_key" })
-aimG:AddSlider({   Name="Trigger FOV",  Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
-aimG:AddSlider({   Name="Reaction Delay",Min=0,Max=500,Default=50,Suffix="ms",Flag="tb_delay" })
-aimG:AddSlider({   Name="Max Distance",  Min=50,Max=2000,Default=850,Suffix="m",Flag="tb_maxdist" })
 
 -- Left: Aimbot
 local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
@@ -980,7 +975,7 @@ abG:AddSlider({   Name="Smoothness",    Min=1, Max=50, Default=10, Flag="ab_smoo
 
 
 -- Right: Misc Combat
-local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 440)
+local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 560)
 miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
 miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
 miscG:AddSeparator()
@@ -992,6 +987,12 @@ miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet"
 miscG:AddSeparator()
 miscG:AddCheckbox({ Name="Fire Rate Changer", Default=false, Flag="fr_enabled" })
 miscG:AddSlider({   Name="Fire Rate",        Min=250, Max=1500, Default=600, Suffix=" RPM", Flag="fr_rpm" })
+miscG:AddSeparator()
+miscG:AddCheckbox({ Name="Triggerbot",      Default=false, Flag="tb_enabled" })
+miscG:AddKeybind({  Name="Triggerbot Key",  Default=Enum.KeyCode.CapsLock, Flag="tb_key" })
+miscG:AddSlider({   Name="Trigger FOV",     Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
+miscG:AddSlider({   Name="Reaction Delay",  Min=0, Max=500, Default=50, Suffix="ms", Flag="tb_delay" })
+miscG:AddSlider({   Name="TB Max Distance", Min=50, Max=2000, Default=850, Suffix="m", Flag="tb_maxdist" })
 
 
 
@@ -1223,6 +1224,320 @@ cfgRight:AddButton({ Name="Unload Script", Callback=function()
     end)
     getgenv().apexengine_loaded = nil
 end })
+
+-- ============================================================
+-- KEYBIND LIST (bottom-left HUD)
+-- ============================================================
+do
+    local kbGui = Instance.new("ScreenGui")
+    kbGui.Name = "ApexKeybinds"
+    kbGui.ResetOnSpawn = false
+    kbGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    kbGui.IgnoreGuiInset = true
+    kbGui.Parent = GetParentGui()
+
+    local kbFrame = New("Frame", {
+        AnchorPoint = Vector2.new(0, 1),
+        Position    = UDim2.new(0, 8, 1, -8),
+        Size        = UDim2.fromOffset(160, 20),  -- auto-grows upward via list
+        BackgroundColor3 = Color3.fromRGB(4, 4, 6),
+        BackgroundTransparency = 0.35,
+        BorderSizePixel = 0,
+        Parent = kbGui,
+    }, { Corner(6), Stroke(Color3.fromRGB(80,80,90), 0.55) })
+
+    -- Title bar
+    local kbTitle = New("Frame", {
+        Size = UDim2.new(1, 0, 0, 20),
+        BackgroundColor3 = Color3.fromRGB(8, 8, 12),
+        BackgroundTransparency = 0.2,
+        BorderSizePixel = 0,
+        Parent = kbFrame,
+    }, { Corner(6) })
+    -- bottom fill to square off the title bar bottom corners
+    New("Frame", { Size=UDim2.new(1,0,0,6), Position=UDim2.new(0,0,1,-6),
+        BackgroundColor3=Color3.fromRGB(8,8,12), BackgroundTransparency=0.2,
+        BorderSizePixel=0, Parent=kbTitle })
+    New("Frame", { BackgroundColor3=Color3.fromRGB(80,80,90), BackgroundTransparency=0.55,
+        BorderSizePixel=0, Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1), Parent=kbTitle })
+    Label({ Text="Keybinds", Font=Theme.FontBold, TextSize=11,
+        TextColor3=Color3.fromRGB(160,160,170), TextXAlignment=Enum.TextXAlignment.Center,
+        Size=UDim2.fromScale(1,1), Parent=kbTitle })
+
+    -- Scrollable list below title
+    local kbList = New("Frame", {
+        Position = UDim2.fromOffset(0, 20),
+        Size = UDim2.new(1, 0, 1, -20),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Parent = kbFrame,
+    }, {
+        New("UIListLayout", { Padding=UDim.new(0,0), SortOrder=Enum.SortOrder.LayoutOrder }),
+        New("UIPadding", { PaddingTop=UDim.new(0,4), PaddingBottom=UDim.new(0,4),
+            PaddingLeft=UDim.new(0,6), PaddingRight=UDim.new(0,6) }),
+    })
+
+    -- kbFrame height = title + list content; anchor bottom-left so it grows upward
+    kbFrame.AutomaticSize = Enum.AutomaticSize.Y
+
+    -- Each entry: { flag, label, keyFlag (optional) }
+    -- keyFlag = nil means the key is fixed/display-only
+    local KB_ENTRIES = {
+        { flag="ab_enabled",         label="Aimbot",        keyFlag="ab_key" },
+        { flag="tb_enabled",         label="Triggerbot",    keyFlag="tb_key" },
+        { flag="esp_enabled",        label="ESP",           keyFlag=nil },
+        { flag="no_recoil",          label="No Recoil",     keyFlag=nil },
+        { flag="no_spread",          label="No Spread",     keyFlag=nil },
+        { flag="rapid_fire",         label="Rapid Fire",    keyFlag=nil },
+        { flag="always_headshot",    label="Always HS",     keyFlag=nil },
+        { flag="instant_bullet",     label="Instant Bullet",keyFlag=nil },
+        { flag="fr_enabled",         label="Fire Rate",     keyFlag=nil },
+        { flag="m_fly",              label="Fly",           keyFlag=nil },
+        { flag="m_noclip",           label="No Clip",       keyFlag=nil },
+        { flag="m_freecam",          label="Free Cam",      keyFlag="m_freecam_key" },
+        { flag="m_xray",             label="X-Ray",         keyFlag=nil },
+        { flag="m_omnisprint",       label="Omni Sprint",   keyFlag=nil },
+        { flag="crosshair_enabled",  label="Crosshair",     keyFlag=nil },
+        { flag="esp_chams",          label="Highlight",     keyFlag=nil },
+        { flag="w_fullbright",       label="Full Bright",   keyFlag=nil },
+        { flag="w_nofog",            label="No Fog",        keyFlag=nil },
+        { flag="w_notrees",          label="No Leaves",     keyFlag=nil },
+    }
+
+    -- Build row frames (hidden by default, shown when flag is true)
+    local _kbRows = {}
+    for i, entry in ipairs(KB_ENTRIES) do
+        local row = New("Frame", {
+            Size = UDim2.new(1, 0, 0, 16),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            LayoutOrder = i,
+            Visible = false,
+            Parent = kbList,
+        })
+        -- colored dot
+        local dot = New("Frame", {
+            Size = UDim2.fromOffset(5, 5),
+            Position = UDim2.fromOffset(0, 5),
+            BackgroundColor3 = Color3.fromRGB(100, 100, 110),
+            BorderSizePixel = 0,
+            Parent = row,
+        }, { Corner(3) })
+        -- feature name
+        local nameLbl = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(10, 0),
+            Size = UDim2.new(1, -50, 1, 0),
+            Font = Theme.Font,
+            FontFace = Theme.Font,
+            TextSize = 11,
+            TextColor3 = Color3.fromRGB(120, 120, 130),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Text = entry.label,
+            Parent = row,
+        })
+        -- key badge
+        local keyLbl = New("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, 0, 0.5, 0),
+            Size = UDim2.fromOffset(44, 14),
+            Font = Theme.Font,
+            FontFace = Theme.Font,
+            TextSize = 10,
+            TextColor3 = Color3.fromRGB(100, 100, 110),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Text = "",
+            Parent = row,
+        })
+        _kbRows[i] = { row=row, dot=dot, nameLbl=nameLbl, keyLbl=keyLbl, entry=entry }
+    end
+
+    local function keyShortName(k)
+        if not k then return "" end
+        if k == Enum.UserInputType.MouseButton2 then return "RMB" end
+        if k == Enum.UserInputType.MouseButton1 then return "LMB" end
+        if k == Enum.UserInputType.MouseButton3 then return "MMB" end
+        local n = k.Name
+        -- shorten common names
+        if n:sub(1,7)=="LeftAlt" then return "LAlt" end
+        if n:sub(1,8)=="RightAlt" then return "RAlt" end
+        if n:sub(1,9)=="CapsLock" then return "Caps" end
+        if #n > 6 then return n:sub(1,6) end
+        return n
+    end
+
+    local COL_ACTIVE   = Color3.fromRGB(220, 220, 230)
+    local COL_INACTIVE = Color3.fromRGB(100, 100, 110)
+    local COL_DOT_ON   = Color3.fromRGB(100, 200, 120)
+    local COL_DOT_OFF  = Color3.fromRGB(80, 80, 90)
+
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        local anyActive = false
+        for _, r in ipairs(_kbRows) do
+            local active = flags[r.entry.flag] == true
+            r.row.Visible = true  -- always show all rows
+            if active then
+                anyActive = true
+                r.dot.BackgroundColor3 = COL_DOT_ON
+                r.nameLbl.TextColor3   = COL_ACTIVE
+                r.keyLbl.TextColor3    = COL_ACTIVE
+            else
+                r.dot.BackgroundColor3 = COL_DOT_OFF
+                r.nameLbl.TextColor3   = COL_INACTIVE
+                r.keyLbl.TextColor3    = COL_INACTIVE
+            end
+            -- update key label
+            if r.entry.keyFlag then
+                r.keyLbl.Text = keyShortName(flags[r.entry.keyFlag])
+            end
+        end
+        -- panel glow when any feature active
+        local stroke = kbFrame:FindFirstChildWhichIsA("UIStroke")
+        if stroke then
+            if anyActive then
+                Tween(stroke, 0.3, { Color=Color3.fromRGB(200,200,215), Transparency=0.15 })
+            else
+                Tween(stroke, 0.3, { Color=Color3.fromRGB(80,80,90), Transparency=0.55 })
+            end
+        end
+    end))
+end
+
+-- ============================================================
+-- NOTICE POPUPS (top-right, toggle-only features)
+-- ============================================================
+do
+    local noticeGui = Instance.new("ScreenGui")
+    noticeGui.Name = "ApexNotices"
+    noticeGui.ResetOnSpawn = false
+    noticeGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    noticeGui.IgnoreGuiInset = true
+    noticeGui.Parent = GetParentGui()
+
+    local noticeStack = New("Frame", {
+        AnchorPoint = Vector2.new(1, 0),
+        Position    = UDim2.new(1, -8, 0, 8),
+        Size        = UDim2.fromOffset(180, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Parent = noticeGui,
+    }, { New("UIListLayout", { Padding=UDim.new(0,4), SortOrder=Enum.SortOrder.LayoutOrder,
+        HorizontalAlignment=Enum.HorizontalAlignment.Right }) })
+
+    -- Features that fire a notice on toggle (not hold-to-use)
+    -- { flag, label, onText, offText }
+    local NOTICE_FLAGS = {
+        { flag="ab_enabled",        label="Aimbot" },
+        { flag="tb_enabled",        label="Triggerbot" },
+        { flag="esp_enabled",       label="ESP" },
+        { flag="no_recoil",         label="No Recoil" },
+        { flag="no_spread",         label="No Spread" },
+        { flag="rapid_fire",        label="Rapid Fire" },
+        { flag="always_headshot",   label="Always Headshot" },
+        { flag="instant_bullet",    label="Instant Bullet" },
+        { flag="fr_enabled",        label="Fire Rate Changer" },
+        { flag="m_fly",             label="Fly" },
+        { flag="m_noclip",          label="No Clip" },
+        { flag="m_xray",            label="X-Ray" },
+        { flag="m_omnisprint",      label="Omni Sprint" },
+        { flag="crosshair_enabled", label="Crosshair" },
+        { flag="esp_chams",         label="Highlight" },
+        { flag="w_fullbright",      label="Full Bright" },
+        { flag="w_nofog",           label="No Fog" },
+        { flag="w_noshadows",       label="No Shadows" },
+        { flag="w_notrees",         label="No Leaves" },
+        { flag="w_nograss",         label="No Grass" },
+        { flag="w_bloom",           label="Bloom" },
+        { flag="w_fovchanger",      label="FOV Changer" },
+        { flag="w_forcetime",       label="Force Time" },
+        { flag="w_ambient",         label="Custom Ambient" },
+        { flag="m_spectate",        label="Spectate" },
+        { flag="tc_enabled",        label="Team Check" },
+    }
+
+    local _noticePrev = {}
+    local _noticeOrder = 0
+
+    local function spawnNotice(text, isOn)
+        _noticeOrder += 1
+        local col = isOn and Color3.fromRGB(80,220,120) or Color3.fromRGB(220,80,80)
+        local card = New("CanvasGroup", {
+            Size = UDim2.fromOffset(180, 28),
+            BackgroundColor3 = Color3.fromRGB(6, 6, 9),
+            BackgroundTransparency = 0,
+            GroupTransparency = 1,
+            BorderSizePixel = 0,
+            LayoutOrder = _noticeOrder,
+            Parent = noticeStack,
+        }, { Corner(6), Stroke(col, 0.35) })
+        -- colored left bar
+        New("Frame", {
+            Size = UDim2.fromOffset(3, 18),
+            Position = UDim2.fromOffset(6, 5),
+            BackgroundColor3 = col,
+            BorderSizePixel = 0,
+            Parent = card,
+        }, { Corner(2) })
+        -- status dot
+        New("Frame", {
+            Size = UDim2.fromOffset(6, 6),
+            Position = UDim2.fromOffset(14, 11),
+            BackgroundColor3 = col,
+            BorderSizePixel = 0,
+            Parent = card,
+        }, { Corner(3) })
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(25, 0),
+            Size = UDim2.new(1, -60, 1, 0),
+            Font = Theme.Font,
+            FontFace = Theme.Font,
+            TextSize = 11,
+            TextColor3 = Color3.fromRGB(210, 210, 220),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Text = text,
+            Parent = card,
+        })
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -8, 0.5, 0),
+            Size = UDim2.fromOffset(30, 14),
+            Font = Theme.FontBold,
+            FontFace = Theme.FontBold,
+            TextSize = 10,
+            TextColor3 = col,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Text = isOn and "ON" or "OFF",
+            Parent = card,
+        })
+        -- fade in
+        Tween(card, 0.18, { GroupTransparency = 0 })
+        -- hold 2s then fade out and destroy
+        task.delay(2, function()
+            local tw = Tween(card, 0.3, { GroupTransparency = 1 })
+            if tw then tw.Completed:Connect(function() pcall(function() card:Destroy() end) end)
+            else task.delay(0.35, function() pcall(function() card:Destroy() end) end) end
+        end)
+    end
+
+    trackConnection(RunService.Heartbeat:Connect(function()
+        local flags = ApexEngine.Flags
+        for _, entry in ipairs(NOTICE_FLAGS) do
+            local cur = flags[entry.flag] == true
+            local prev = _noticePrev[entry.flag]
+            if prev ~= nil and cur ~= prev then
+                spawnNotice(entry.label, cur)
+            end
+            _noticePrev[entry.flag] = cur
+        end
+    end))
+end
 
 -- ============================================================
 -- WATERMARK + FPS
