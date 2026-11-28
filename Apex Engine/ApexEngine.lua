@@ -922,6 +922,12 @@ function ApexEngine:CreateWindow(cfg)
 end
 
 -- ============================================================
+-- WIDGET REGISTRY (must be before any tab UI)
+-- ============================================================
+local _widgetRegistry = {}
+local function registerWidget(flag, obj) if flag then _widgetRegistry[flag] = obj end end
+
+-- ============================================================
 -- ICONS
 -- ============================================================
 local Icons = {
@@ -961,32 +967,32 @@ local ConfigTab  = Window:AddTab("Configs", Icons.config)
 local CombatPage = CombatTab:AddSubtab("Main")
 
 local abG = CombatPage:AddGroup("Aimbot", Icons.mouse, "Left", 340)
-abG:AddCheckbox({ Name="Enabled",      Default=false, Flag="ab_enabled" })
+registerWidget("ab_enabled", abG:AddCheckbox({ Name="Enabled",      Default=false, Flag="ab_enabled" }))
 abG:AddKeybind({  Name="Aimbot Key",   Default=Enum.KeyCode.E, Flag="ab_key" })
 abG:AddDropdown({ Name="Aim Part",     Items={"Head","Torso","Left Arm","Right Arm","Left Leg","Right Leg"}, Default="Head", Flag="ab_part" })
-abG:AddSlider({   Name="FOV",          Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" })
-abG:AddSlider({   Name="Max Distance", Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" })
-abG:AddCheckbox({ Name="Prediction",   Default=true,  Flag="ab_predict" })
-abG:AddSlider({   Name="Smoothness",   Min=1, Max=50, Default=10, Flag="ab_smooth" })
+registerWidget("ab_fov",      abG:AddSlider({   Name="FOV",          Min=10,Max=500,Default=80,Suffix="px",Flag="ab_fov" }))
+registerWidget("ab_maxdist",  abG:AddSlider({   Name="Max Distance", Min=50,Max=2000,Default=1000,Suffix="m",Flag="ab_maxdist" }))
+registerWidget("ab_predict",  abG:AddCheckbox({ Name="Prediction",   Default=true,  Flag="ab_predict" }))
+registerWidget("ab_smooth",   abG:AddSlider({   Name="Smoothness",   Min=1, Max=50, Default=10, Flag="ab_smooth" }))
 
 local miscG = CombatPage:AddGroup("Misc", Icons.feather, "Right", 560)
-miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" })
-miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" })
+registerWidget("no_recoil",      miscG:AddCheckbox({ Name="No Recoil",      Default=false, Flag="no_recoil" }))
+registerWidget("no_spread",      miscG:AddCheckbox({ Name="No Spread",       Default=false, Flag="no_spread" }))
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Rapid Fire",      Default=false, Flag="rapid_fire" })
-miscG:AddSlider({   Name="RF Multiplier",   Min=2, Max=10, Default=3, Flag="rapid_fire_mult" })
+registerWidget("rapid_fire",     miscG:AddCheckbox({ Name="Rapid Fire",      Default=false, Flag="rapid_fire" }))
+registerWidget("rapid_fire_mult",miscG:AddSlider({   Name="RF Multiplier",   Min=2, Max=10, Default=3, Flag="rapid_fire_mult" }))
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Always Headshot", Default=false, Flag="always_headshot" })
-miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet" })
+registerWidget("always_headshot",miscG:AddCheckbox({ Name="Always Headshot", Default=false, Flag="always_headshot" }))
+registerWidget("instant_bullet", miscG:AddCheckbox({ Name="Instant Bullet",  Default=false, Flag="instant_bullet" }))
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Fire Rate Changer", Default=false, Flag="fr_enabled" })
-miscG:AddSlider({   Name="Fire Rate",        Min=250, Max=1500, Default=600, Suffix=" RPM", Flag="fr_rpm" })
+registerWidget("fr_enabled",     miscG:AddCheckbox({ Name="Fire Rate Changer", Default=false, Flag="fr_enabled" }))
+registerWidget("fr_rpm",         miscG:AddSlider({   Name="Fire Rate",        Min=250, Max=1500, Default=600, Suffix=" RPM", Flag="fr_rpm" }))
 miscG:AddSeparator()
-miscG:AddCheckbox({ Name="Triggerbot",      Default=false, Flag="tb_enabled" })
+registerWidget("tb_enabled",     miscG:AddCheckbox({ Name="Triggerbot",      Default=false, Flag="tb_enabled" }))
 miscG:AddKeybind({  Name="Triggerbot Key",  Default=Enum.KeyCode.CapsLock, Flag="tb_key" })
-miscG:AddSlider({   Name="Trigger FOV",     Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" })
-miscG:AddSlider({   Name="Reaction Delay",  Min=0, Max=500, Default=50, Suffix="ms", Flag="tb_delay" })
-miscG:AddSlider({   Name="TB Max Distance", Min=50, Max=2000, Default=850, Suffix="m", Flag="tb_maxdist" })
+registerWidget("tb_fov",         miscG:AddSlider({   Name="Trigger FOV",     Min=1, Max=60, Default=15, Suffix="px", Flag="tb_fov" }))
+registerWidget("tb_delay",       miscG:AddSlider({   Name="Reaction Delay",  Min=0, Max=500, Default=50, Suffix="ms", Flag="tb_delay" }))
+registerWidget("tb_maxdist",     miscG:AddSlider({   Name="TB Max Distance", Min=50, Max=2000, Default=850, Suffix="m", Flag="tb_maxdist" }))
 
 -- ============================================================
 -- VISUAL TAB
@@ -994,36 +1000,36 @@ miscG:AddSlider({   Name="TB Max Distance", Min=50, Max=2000, Default=850, Suffi
 local VisualPage = VisualTab:AddSubtab("ESP")
 
 local espG = VisualPage:AddGroup("ESP", Icons.eye, "Left", 340)
-espG:AddCheckbox({ Name="Enabled",        Default=false, Flag="esp_enabled" })
+registerWidget("esp_enabled",   espG:AddCheckbox({ Name="Enabled",        Default=false, Flag="esp_enabled" }))
 espG:AddSeparator()
-espG:AddCheckbox({ Name="Box",            Default=true,  Flag="esp_box" })
-espG:AddColorPicker({ Name="Box Color",   Default=Color3.fromRGB(255,255,255), Flag="esp_box_col" })
+registerWidget("esp_box",       espG:AddCheckbox({ Name="Box",            Default=true,  Flag="esp_box" }))
+registerWidget("esp_box_col",   espG:AddColorPicker({ Name="Box Color",   Default=Color3.fromRGB(255,255,255), Flag="esp_box_col" }))
 espG:AddSeparator()
-espG:AddCheckbox({ Name="Name",           Default=true,  Flag="esp_name" })
-espG:AddColorPicker({ Name="Name Color",  Default=Color3.fromRGB(255,255,255), Flag="esp_name_col" })
+registerWidget("esp_name",      espG:AddCheckbox({ Name="Name",           Default=true,  Flag="esp_name" }))
+registerWidget("esp_name_col",  espG:AddColorPicker({ Name="Name Color",  Default=Color3.fromRGB(255,255,255), Flag="esp_name_col" }))
 espG:AddSeparator()
-espG:AddCheckbox({ Name="Health Bar",     Default=true,  Flag="esp_health" })
-espG:AddColorPicker({ Name="Health Color",Default=Color3.fromRGB(80,255,120),  Flag="esp_health_col" })
+registerWidget("esp_health",    espG:AddCheckbox({ Name="Health Bar",     Default=true,  Flag="esp_health" }))
+registerWidget("esp_health_col",espG:AddColorPicker({ Name="Health Color",Default=Color3.fromRGB(80,255,120),  Flag="esp_health_col" }))
 espG:AddSeparator()
-espG:AddCheckbox({ Name="Distance",       Default=false, Flag="esp_dist" })
-espG:AddSlider({   Name="Max Distance",   Min=50,Max=5000,Default=1500,Suffix="m",Flag="esp_maxdist" })
-espG:AddSlider({   Name="Text Size",      Min=8,Max=24,Default=13,Flag="esp_textsize" })
+registerWidget("esp_dist",      espG:AddCheckbox({ Name="Distance",       Default=false, Flag="esp_dist" }))
+registerWidget("esp_maxdist",   espG:AddSlider({   Name="Max Distance",   Min=50,Max=5000,Default=1500,Suffix="m",Flag="esp_maxdist" }))
+registerWidget("esp_textsize",  espG:AddSlider({   Name="Text Size",      Min=8,Max=24,Default=13,Flag="esp_textsize" }))
 
 local tcG = VisualPage:AddGroup("Team Check", Icons.crown, "Left", 80)
-tcG:AddCheckbox({ Name="Team Check", Default=true, Flag="tc_enabled" })
+registerWidget("tc_enabled", tcG:AddCheckbox({ Name="Team Check", Default=true, Flag="tc_enabled" }))
 tcG:AddLabel("Skip clan teammates in all features")
 
 local espR = VisualPage:AddGroup("Extra", Icons.ghost, "Right", 340)
-espR:AddCheckbox({ Name="Highlight",      Default=false, Flag="esp_chams" })
-espR:AddColorPicker({ Name="Fill Color",  Default=Color3.fromRGB(255,60,90),   Flag="esp_fill_col" })
-espR:AddSlider({   Name="Fill Opacity",   Min=0,Max=100,Default=50,Suffix="%", Flag="esp_fill_opacity" })
-espR:AddColorPicker({ Name="Outline Color",Default=Color3.fromRGB(255,255,255),Flag="esp_outline_col" })
+registerWidget("esp_chams",       espR:AddCheckbox({ Name="Highlight",      Default=false, Flag="esp_chams" }))
+registerWidget("esp_fill_col",    espR:AddColorPicker({ Name="Fill Color",  Default=Color3.fromRGB(255,60,90),   Flag="esp_fill_col" }))
+registerWidget("esp_fill_opacity",espR:AddSlider({   Name="Fill Opacity",   Min=0,Max=100,Default=50,Suffix="%", Flag="esp_fill_opacity" }))
+registerWidget("esp_outline_col", espR:AddColorPicker({ Name="Outline Color",Default=Color3.fromRGB(255,255,255),Flag="esp_outline_col" }))
 espR:AddSeparator()
-espR:AddCheckbox({ Name="Crosshair",      Default=false, Flag="crosshair_enabled" })
-espR:AddColorPicker({ Name="CH Color",    Default=Color3.fromRGB(255,255,255), Flag="crosshair_col" })
-espR:AddSlider({   Name="CH Gap",         Min=1,Max=20,Default=4,Flag="crosshair_gap" })
-espR:AddSlider({   Name="CH Size",        Min=2,Max=30,Default=8,Flag="crosshair_size" })
-espR:AddSlider({   Name="CH Thickness",   Min=1,Max=5,Default=1,Flag="crosshair_thick" })
+registerWidget("crosshair_enabled",espR:AddCheckbox({ Name="Crosshair",      Default=false, Flag="crosshair_enabled" }))
+registerWidget("crosshair_col",    espR:AddColorPicker({ Name="CH Color",    Default=Color3.fromRGB(255,255,255), Flag="crosshair_col" }))
+registerWidget("crosshair_gap",    espR:AddSlider({   Name="CH Gap",         Min=1,Max=20,Default=4,Flag="crosshair_gap" }))
+registerWidget("crosshair_size",   espR:AddSlider({   Name="CH Size",        Min=2,Max=30,Default=8,Flag="crosshair_size" }))
+registerWidget("crosshair_thick",  espR:AddSlider({   Name="CH Thickness",   Min=1,Max=5,Default=1,Flag="crosshair_thick" }))
 
 -- ============================================================
 -- WORLD ESP TAB (extra subtab on Visual)
@@ -1056,27 +1062,28 @@ wespRight:AddCheckbox({ Name="Other",         Default=false, Flag="wesp_other" }
 -- ============================================================
 local WorldPage = WorldTab:AddSubtab("Environment")
 
-local lightG = WorldPage:AddGroup("Lighting", Icons.pallet, "Left", 300)
-lightG:AddCheckbox({ Name="Full Bright",    Default=false, Flag="w_fullbright" })
-lightG:AddCheckbox({ Name="No Fog",         Default=false, Flag="w_nofog" })
-lightG:AddCheckbox({ Name="No Shadows",     Default=false, Flag="w_noshadows" })
+local lightG = WorldPage:AddGroup("Lighting", Icons.pallet, "Left", 320)
+registerWidget("w_fullbright",  lightG:AddCheckbox({ Name="Full Bright",    Default=false, Flag="w_fullbright" }))
+lightG:AddKeybind({  Name="Full Bright Key", Default=nil, Flag="w_fullbright_key" })
+registerWidget("w_nofog",       lightG:AddCheckbox({ Name="No Fog",         Default=false, Flag="w_nofog" }))
+registerWidget("w_noshadows",   lightG:AddCheckbox({ Name="No Shadows",     Default=false, Flag="w_noshadows" }))
 lightG:AddSeparator()
-lightG:AddCheckbox({ Name="Custom Ambient", Default=false, Flag="w_ambient" })
-lightG:AddColorPicker({ Name="Ambient Color",Default=Color3.fromRGB(120,120,160), Flag="w_ambient_col" })
-lightG:AddSlider({   Name="Brightness",     Min=0,Max=10,Default=2,Decimals=1,Flag="w_bright" })
+registerWidget("w_ambient",     lightG:AddCheckbox({ Name="Custom Ambient", Default=false, Flag="w_ambient" }))
+registerWidget("w_ambient_col", lightG:AddColorPicker({ Name="Ambient Color",Default=Color3.fromRGB(120,120,160), Flag="w_ambient_col" }))
+registerWidget("w_bright",      lightG:AddSlider({   Name="Brightness",     Min=0,Max=10,Default=2,Decimals=1,Flag="w_bright" }))
 lightG:AddSeparator()
-lightG:AddCheckbox({ Name="Force Time",     Default=false, Flag="w_forcetime" })
-lightG:AddSlider({   Name="Time of Day",    Min=0,Max=24,Default=14,Suffix="h",Flag="w_time" })
+registerWidget("w_forcetime",   lightG:AddCheckbox({ Name="Force Time",     Default=false, Flag="w_forcetime" }))
+registerWidget("w_time",        lightG:AddSlider({   Name="Time of Day",    Min=0,Max=24,Default=14,Suffix="h",Flag="w_time" }))
 
 local envG = WorldPage:AddGroup("Environment", Icons.world, "Right", 300)
-envG:AddCheckbox({ Name="No Leaves",        Default=false, Flag="w_notrees" })
-envG:AddCheckbox({ Name="No Grass",         Default=false, Flag="w_nograss" })
+registerWidget("w_notrees",     envG:AddCheckbox({ Name="No Leaves",        Default=false, Flag="w_notrees" }))
+registerWidget("w_nograss",     envG:AddCheckbox({ Name="No Grass",         Default=false, Flag="w_nograss" }))
 envG:AddSeparator()
-envG:AddCheckbox({ Name="Bloom",            Default=false, Flag="w_bloom" })
-envG:AddSlider({   Name="Bloom Intensity",  Min=0,Max=100,Default=40,Suffix="%",Flag="w_bloom_int" })
+registerWidget("w_bloom",       envG:AddCheckbox({ Name="Bloom",            Default=false, Flag="w_bloom" }))
+registerWidget("w_bloom_int",   envG:AddSlider({   Name="Bloom Intensity",  Min=0,Max=100,Default=40,Suffix="%",Flag="w_bloom_int" }))
 envG:AddSeparator()
-envG:AddCheckbox({ Name="FOV Changer",      Default=false, Flag="w_fovchanger" })
-envG:AddSlider({   Name="Custom FOV",       Min=30,Max=120,Default=70,Flag="w_customfov" })
+registerWidget("w_fovchanger",  envG:AddCheckbox({ Name="FOV Changer",      Default=false, Flag="w_fovchanger" }))
+registerWidget("w_customfov",   envG:AddSlider({   Name="Custom FOV",       Min=30,Max=120,Default=70,Flag="w_customfov" }))
 
 -- ============================================================
 -- PLAYER TAB
@@ -1084,13 +1091,13 @@ envG:AddSlider({   Name="Custom FOV",       Min=30,Max=120,Default=70,Flag="w_cu
 local PlayerPage = PlayerTab:AddSubtab("Movement")
 
 local moveG = PlayerPage:AddGroup("Movement", Icons.user, "Left", 220)
-moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" })
-moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" })
+registerWidget("m_omnisprint",       moveG:AddCheckbox({ Name="Omni Sprint",     Default=false, Flag="m_omnisprint" }))
+registerWidget("m_omnisprint_bonus", moveG:AddSlider({   Name="Sprint Speed",    Min=0, Max=30, Default=0, Flag="m_omnisprint_bonus" }))
 moveG:AddSeparator()
-moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" })
-moveG:AddSlider({   Name="Fly Speed",       Min=1,Max=100,Default=20,Flag="m_flyspeed" })
+registerWidget("m_fly",              moveG:AddCheckbox({ Name="Fly",             Default=false, Flag="m_fly" }))
+registerWidget("m_flyspeed",         moveG:AddSlider({   Name="Fly Speed",       Min=1,Max=100,Default=20,Flag="m_flyspeed" }))
 moveG:AddSeparator()
-moveG:AddCheckbox({ Name="Spectate",        Default=false, Flag="m_spectate" })
+registerWidget("m_spectate",         moveG:AddCheckbox({ Name="Spectate",        Default=false, Flag="m_spectate" }))
 moveG:AddButton({   Name="Set Spectate Target", Callback=function()
     local pg = GetParentGui()
     local ov = New("ScreenGui",{Name="ApexSpecPrompt",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,IgnoreGuiInset=true,DisplayOrder=9999,Parent=pg})
@@ -1107,22 +1114,49 @@ moveG:AddButton({   Name="Set Spectate Target", Callback=function()
     task.defer(function() tb:CaptureFocus() end)
 end })
 
-local miscPG = PlayerPage:AddGroup("Misc", Icons.hammer, "Right", 280)
-miscPG:AddCheckbox({ Name="Free Cam",       Default=false, Flag="m_freecam" })
+local miscPG = PlayerPage:AddGroup("Misc", Icons.hammer, "Right", 300)
+registerWidget("m_freecam",       miscPG:AddCheckbox({ Name="Free Cam",       Default=false, Flag="m_freecam" }))
 miscPG:AddKeybind({  Name="Free Cam Key",   Default=Enum.KeyCode.V, Flag="m_freecam_key", Callback=function()
     ApexEngine.Flags["m_freecam"] = not ApexEngine.Flags["m_freecam"]
 end })
-miscPG:AddSlider({   Name="Cam Speed",      Min=10, Max=200, Default=50, Flag="m_freecam_speed" })
+registerWidget("m_freecam_speed", miscPG:AddSlider({   Name="Cam Speed",      Min=10, Max=200, Default=50, Flag="m_freecam_speed" }))
 miscPG:AddSeparator()
-miscPG:AddCheckbox({ Name="No Clip",        Default=false, Flag="m_noclip" })
+registerWidget("m_noclip",        miscPG:AddCheckbox({ Name="No Clip",        Default=false, Flag="m_noclip" }))
 miscPG:AddLabel("NoClip: walk through walls")
 miscPG:AddSeparator()
-miscPG:AddCheckbox({ Name="X-Ray",          Default=false, Flag="m_xray" })
-miscPG:AddSlider({   Name="X-Ray Trans",    Min=10, Max=98, Default=85, Suffix="%", Flag="m_xray_trans" })
+registerWidget("m_xray",          miscPG:AddCheckbox({ Name="X-Ray",          Default=false, Flag="m_xray" }))
+miscPG:AddKeybind({  Name="X-Ray Key",       Default=nil, Flag="m_xray_key" })
+registerWidget("m_xray_trans",    miscPG:AddSlider({   Name="X-Ray Trans",    Min=10, Max=98, Default=85, Suffix="%", Flag="m_xray_trans" }))
 miscPG:AddSeparator()
-miscPG:AddCheckbox({ Name="Zoom",           Default=false, Flag="m_zoom" })
-miscPG:AddKeybind({  Name="Zoom Key",       Default=Enum.KeyCode.Z, Flag="m_zoom_key" })
-miscPG:AddSlider({   Name="Zoom FOV",       Min=5, Max=60, Default=20, Flag="m_zoom_fov" })
+registerWidget("m_zoom",          miscPG:AddCheckbox({ Name="Zoom",           Default=false, Flag="m_zoom" }))
+miscPG:AddKeybind({  Name="Zoom Key",       Default=Enum.KeyCode.Z, Flag="m_zoom_key",
+    Callback=function() ApexEngine.Flags["m_zoom"] = not ApexEngine.Flags["m_zoom"] end })
+registerWidget("m_zoom_fov",      miscPG:AddSlider({   Name="Zoom FOV",       Min=5, Max=60, Default=20, Flag="m_zoom_fov" }))
+
+local vmPage = PlayerTab:AddSubtab("ViewModel")
+local vmG = vmPage:AddGroup("ViewModel Changer", Icons.dagger, "Left", 260)
+registerWidget("vm_enabled",  vmG:AddCheckbox({ Name="Enabled", Default=false, Flag="vm_enabled" }))
+registerWidget("vm_material", vmG:AddDropdown({ Name="Material", Flag="vm_material", Default="Forcefield", Items={
+    "Forcefield","Neon","Glass","SmoothPlastic","Metal","DiamondPlate",
+    "Granite","Marble","Brick","Wood","WoodPlanks","Cobblestone",
+    "CorrodedMetal","Ice","Fabric","Sand","Sandstone","Slate",
+    "Concrete","Foil","Pebble","Rock","Grass","LeafyGrass",
+} }))
+registerWidget("vm_color", vmG:AddDropdown({ Name="Color", Flag="vm_color", Default="Cyan", Items={
+    "Cyan","White","Black","Red","Lime","Blue","Yellow","Magenta",
+    "Orange","Pink","Purple","Teal","Gold","Silver","Hot Pink",
+    "Electric Blue","Bright Red","Bright Green","Bright Blue",
+    "Dark Red","Dark Green","Dark Blue","Coral","Lavender",
+} }))
+registerWidget("vm_transparency", vmG:AddSlider({ Name="Transparency", Min=0, Max=95, Default=0, Suffix="%", Flag="vm_transparency" }))
+
+local vmInfoG = vmPage:AddGroup("Info", Icons.code, "Right", 200)
+vmInfoG:AddLabel("Applies to all VM parts")
+vmInfoG:AddLabel("Left Arm + Right Arm + Tool")
+vmInfoG:AddSeparator()
+vmInfoG:AddLabel("Forcefield = glowing effect")
+vmInfoG:AddLabel("Neon = bright glow")
+vmInfoG:AddLabel("Glass = transparent look")
 
 -- ============================================================
 -- CONFIG TAB
@@ -1160,6 +1194,12 @@ local function loadConfig(name)
             if v.__type=="Color3" then ApexEngine.Flags[k]=Color3.new(v.r,v.g,v.b)
             elseif v.__type=="EnumItem" then pcall(function() ApexEngine.Flags[k]=Enum[v.enum][v.value] end) end
         else ApexEngine.Flags[k]=v end
+    end
+    -- Sync UI widgets to loaded flag values
+    for k, obj in pairs(_widgetRegistry) do
+        if ApexEngine.Flags[k] ~= nil then
+            pcall(function() obj:Set(ApexEngine.Flags[k]) end)
+        end
     end
 end
 
@@ -1229,9 +1269,9 @@ do
     kbGui.Parent = GetParentGui()
 
     local kbFrame = New("Frame", {
-        AnchorPoint = Vector2.new(0, 1),
-        Position    = UDim2.new(0, 8, 1, -8),
-        Size        = UDim2.fromOffset(160, 20),  -- auto-grows upward via list
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position    = UDim2.new(0, 8, 0.55, 0),
+        Size        = UDim2.fromOffset(160, 20),  -- auto-grows via list
         BackgroundColor3 = Color3.fromRGB(4, 4, 6),
         BackgroundTransparency = 0.35,
         BorderSizePixel = 0,
@@ -1621,6 +1661,7 @@ do
 
     -- Restore lighting when features turn off
     local _prevFullbright, _prevAmbient, _prevFog, _prevShadows, _prevTime = false,false,false,false,false
+    local _fbKeyWas = false
     trackConnection(RunService.Heartbeat:Connect(function()
         local flags = ApexEngine.Flags
         -- Fullbright restore
@@ -1628,6 +1669,16 @@ do
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
         end
         _prevFullbright = flags["w_fullbright"] == true
+        -- Fullbright keybind toggle
+        local fbKey = flags["w_fullbright_key"]
+        if fbKey and typeof(fbKey)=="EnumItem" and fbKey.EnumType==Enum.KeyCode then
+            local held = UserInputService:IsKeyDown(fbKey)
+            if held and not _fbKeyWas then
+                local w = _widgetRegistry["w_fullbright"]
+                if w then w:Set(not flags["w_fullbright"]) end
+            end
+            _fbKeyWas = held
+        end
         -- Ambient restore
         if _prevAmbient and not flags["w_ambient"] and not flags["w_fullbright"] then
             Lighting.Brightness=_origBrightness; Lighting.Ambient=_origAmbient; Lighting.OutdoorAmbient=_origOutdoor
@@ -2818,8 +2869,20 @@ do
     end
 
     local _xrayTick = 0
+    local _xrayKeyWas = false
     trackConnection(RunService.Heartbeat:Connect(function(dt)
         local enabled = ApexEngine.Flags["m_xray"] == true
+        -- X-Ray keybind toggle
+        local xrKey = ApexEngine.Flags["m_xray_key"]
+        if xrKey and typeof(xrKey)=="EnumItem" and xrKey.EnumType==Enum.KeyCode then
+            local held = UserInputService:IsKeyDown(xrKey)
+            if held and not _xrayKeyWas then
+                local w = _widgetRegistry["m_xray"]
+                if w then w:Set(not ApexEngine.Flags["m_xray"]) end
+                enabled = ApexEngine.Flags["m_xray"] == true
+            end
+            _xrayKeyWas = held
+        end
         if enabled ~= _prevXray then
             _prevXray = enabled
             if not enabled then removeXray() end
@@ -2837,28 +2900,17 @@ end
 -- ============================================================
 do
     local _origFOV = nil
-    local _zooming = false
 
     trackConnection(RunService.RenderStepped:Connect(function()
         local flags = ApexEngine.Flags
-        if not flags["m_zoom"] then
-            if _zooming then
-                workspace.CurrentCamera.FieldOfView = _origFOV or 70
-                _zooming = false; _origFOV = nil
-            end
-            return
-        end
-        local key = flags["m_zoom_key"] or Enum.KeyCode.Z
-        local holding = UserInputService:IsKeyDown(key)
-        if holding and not _zooming then
-            _origFOV = workspace.CurrentCamera.FieldOfView
-            _zooming = true
-        elseif not holding and _zooming then
-            workspace.CurrentCamera.FieldOfView = _origFOV or 70
-            _zooming = false; _origFOV = nil
-        end
-        if _zooming then
+        if flags["m_zoom"] then
+            if not _origFOV then _origFOV = workspace.CurrentCamera.FieldOfView end
             workspace.CurrentCamera.FieldOfView = flags["m_zoom_fov"] or 20
+        else
+            if _origFOV then
+                workspace.CurrentCamera.FieldOfView = _origFOV
+                _origFOV = nil
+            end
         end
     end))
 end
@@ -3410,4 +3462,91 @@ do
     end))
 end
 
-return ApexEngine		
+-- ============================================================
+-- VIEWMODEL CHANGER
+-- ============================================================
+do
+    local RS = game:GetService("ReplicatedStorage")
+    local VM_NAMES = {
+        "AHammer_VM","APC9_VM","Bandage_VM","BreachHook_VM","C4_VM",
+        "Hammer_VM","HealSpray_VM","IHammer_VM","ImpPistol_VM","ImprovisedExplosive_VM",
+        "JackHammer_VM","MTAC_VM","MtacS_VM","PrimitivePistol_VM","PrimitiveRifle_VM",
+        "Prototype-57_VM","R80_VM","RocketLauncher_VM","SHammer_VM","SR-96_VM",
+        "SyntheticBandage_VM","Syringe_VM","TrackerGrenade_VM","VintageSmg_VM","Viper_VM",
+    }
+    local VM_COLORS = {
+        Cyan=Color3.fromRGB(0,255,255), White=Color3.fromRGB(255,255,255),
+        Black=Color3.fromRGB(0,0,0), Red=Color3.fromRGB(255,0,0),
+        Lime=Color3.fromRGB(0,255,0), Blue=Color3.fromRGB(0,0,255),
+        Yellow=Color3.fromRGB(255,255,0), Magenta=Color3.fromRGB(255,0,255),
+        Orange=Color3.fromRGB(255,128,0), Pink=Color3.fromRGB(255,105,180),
+        Purple=Color3.fromRGB(128,0,128), Teal=Color3.fromRGB(0,128,128),
+        Gold=Color3.fromRGB(255,215,0), Silver=Color3.fromRGB(192,192,192),
+        ["Hot Pink"]=Color3.fromRGB(255,20,147), ["Electric Blue"]=Color3.fromRGB(0,120,255),
+        ["Bright Red"]=Color3.fromRGB(255,30,30), ["Bright Green"]=Color3.fromRGB(30,255,30),
+        ["Bright Blue"]=Color3.fromRGB(30,30,255), ["Dark Red"]=Color3.fromRGB(139,0,0),
+        ["Dark Green"]=Color3.fromRGB(0,100,0), ["Dark Blue"]=Color3.fromRGB(0,0,139),
+        Coral=Color3.fromRGB(255,127,80), Lavender=Color3.fromRGB(230,190,255),
+    }
+    -- saved originals: vm name -> { part -> {Color3, Material, Transparency} }
+    local _vmOrig = {}
+
+    local function getVMParts(name)
+        local model = RS:FindFirstChild(name)
+        if not model then return {} end
+        local parts = {}
+        for _, v in ipairs(model:GetDescendants()) do
+            if v:IsA("BasePart") then parts[#parts+1] = v end
+        end
+        return parts
+    end
+
+    local function applyVM()
+        local flags = ApexEngine.Flags
+        local mat = Enum.Material[flags["vm_material"] or "Forcefield"]
+        local col = VM_COLORS[flags["vm_color"] or "Cyan"] or Color3.fromRGB(0,255,255)
+        local trans = (flags["vm_transparency"] or 0) / 100
+        for _, name in ipairs(VM_NAMES) do
+            local parts = getVMParts(name)
+            for _, p in ipairs(parts) do
+                if not _vmOrig[p] then
+                    _vmOrig[p] = { Color3=p.Color, Material=p.Material, Transparency=p.Transparency }
+                end
+                pcall(function()
+                    p.Color = col
+                    p.Material = mat
+                    p.Transparency = trans
+                end)
+            end
+        end
+    end
+
+    local function restoreVM()
+        for part, orig in pairs(_vmOrig) do
+            pcall(function()
+                part.Color = orig.Color3
+                part.Material = orig.Material
+                part.Transparency = orig.Transparency
+            end)
+        end
+        table.clear(_vmOrig)
+    end
+
+    local _prevVM = false
+    local _vmTick = 0
+    trackConnection(RunService.Heartbeat:Connect(function(dt)
+        local enabled = ApexEngine.Flags["vm_enabled"] == true
+        if not enabled then
+            if _prevVM then restoreVM() end
+            _prevVM = false
+            return
+        end
+        _prevVM = true
+        _vmTick += dt
+        if _vmTick < 1 then return end  -- re-apply every 1s
+        _vmTick = 0
+        applyVM()
+    end))
+end
+
+return ApexEngine
